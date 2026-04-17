@@ -15,7 +15,9 @@ For each system, we need the following information:
 The tool should allow the user to select a node and "Delete" it, and should then give
 the user information about what information, interfaces, data flow, etc is now missing.
 
+
 Options:
+
 -> generate a list of all connecting nodes that are affected
 
 -> generate a list of the connections (edges) that are now missing

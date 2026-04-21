@@ -13,6 +13,7 @@ import { DebugComparisonPage } from "./DebugComparisonPage";
 import { ErrorPage } from "./ErrorPage";
 import { HomePage } from "./HomePage";
 import { NetworkStraightPage } from "./NetworkStraightPage";
+import { NetworkPage } from "./NetworkPage";
 import { InitializedLayout } from "./layouts";
 
 const router = createHashRouter([
@@ -25,18 +26,17 @@ const router = createHashRouter([
 				index: true,
 				Component: HomePage,
 			},
-			// To add a new page:
-			// {
-			//     path: '/your-route',
-			//     Component: YourPage,
-			// },
 			{
-				path: '/debug-comparison',
-				Component: DebugComparisonPage,
+				path: '/network',
+				Component: NetworkPage,
 			},
 			{
 				path: '/network-v2',
 				Component: NetworkStraightPage,
+			},
+			{
+				path: '/debug-comparison',
+				Component: DebugComparisonPage,
 			},
 			{
 				// Catch-all: redirect unknown routes to home

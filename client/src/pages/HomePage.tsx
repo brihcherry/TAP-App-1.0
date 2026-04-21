@@ -1,7 +1,7 @@
 // HomePage.tsx - The default landing page.
 
-import { NetworkPage } from "./NetworkPage";
+import { SystemInspectionPage } from "./SystemInspectionPage";
 
 export const HomePage = () => {
-	return <NetworkPage />;
+	return <SystemInspectionPage />;
 };

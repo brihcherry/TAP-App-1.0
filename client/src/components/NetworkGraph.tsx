@@ -17,6 +17,10 @@ interface NetworkGraphProps {
 	curveOffset?: number;
 	/** Merge A→B + B→A pairs into a single double-headed edge. Default: false. */
 	mergeBidirectional?: boolean;
+	/** D3 forceManyBody strength (negative = repulsion). Default: -200. */
+	chargeStrength?: number;
+	/** D3 forceLink distance in px. Default: 60. */
+	linkDistance?: number;
 }
 
 // Force layout parameters (matching legacy force-graph defaults)
@@ -36,6 +40,8 @@ export const NetworkGraph = ({
 	isInteractionLocked = false,
 	curveOffset = 30,
 	mergeBidirectional = false,
+	chargeStrength = CHARGE_STRENGTH,
+	linkDistance = LINK_DISTANCE,
 }: NetworkGraphProps) => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
@@ -280,9 +286,9 @@ export const NetworkGraph = ({
 				d3
 					.forceLink<ProcessedNode, ProcessedEdge>(workingEdges)
 					.id((d) => d.id)
-					.distance(LINK_DISTANCE),
+					.distance(linkDistance),
 			)
-			.force("charge", d3.forceManyBody().strength(CHARGE_STRENGTH))
+			.force("charge", d3.forceManyBody().strength(chargeStrength))
 			.force("center", d3.forceCenter(width / 2, height / 2))
 			.force("gravity", d3.forceRadial(0, width / 2, height / 2).strength(CENTER_GRAVITY))
 			.force("collide", d3.forceCollide(NODE_RADIUS + 4))
@@ -332,7 +338,7 @@ const cx = mx + px * curveOffset;
 					d3.zoomIdentity.translate(tx, ty).scale(scale),
 				);
 		});
-	}, [nodes, edges, curveOffset, mergeBidirectional, isInteractionLocked]);
+	}, [nodes, edges, curveOffset, mergeBidirectional, isInteractionLocked, chargeStrength, linkDistance]);
 
 	useEffect(() => {
 		initGraph();

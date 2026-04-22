@@ -301,3 +301,94 @@ export function getConnectionsAtDepth(
 
 	return { nodeIds, edgeIds, reverseEdgeIds: reverseEdgeIds.size > 0 ? reverseEdgeIds : undefined };
 }
+
+/**
+ * Find "island" nodes in a system network graph — nodes that are NOT in the
+ * largest connected component. Unlike findIslands(), this does not depend on a
+ * specific hub node; it finds the main cluster by size and highlights everything
+ * outside it.
+ *
+ * Used by SystemNetworkPage where there is no single DataObject hub.
+ */
+export function findIslandsInSystemNetwork(
+	nodes: ProcessedNode[],
+	edges: ProcessedEdge[],
+): HighlightSet {
+	if (nodes.length === 0) {
+		return { nodeIds: new Set(), edgeIds: new Set() };
+	}
+
+	function getSourceId(edge: ProcessedEdge): string {
+		return typeof edge.source === "string"
+			? edge.source
+			: (edge.source as ProcessedNode).id;
+	}
+	function getTargetId(edge: ProcessedEdge): string {
+		return typeof edge.target === "string"
+			? edge.target
+			: (edge.target as ProcessedNode).id;
+	}
+
+	// Build undirected adjacency list
+	const neighbors = new Map<string, Set<string>>();
+	for (const node of nodes) {
+		neighbors.set(node.id, new Set());
+	}
+	for (const edge of edges) {
+		const sId = getSourceId(edge);
+		const tId = getTargetId(edge);
+		neighbors.get(sId)?.add(tId);
+		neighbors.get(tId)?.add(sId);
+	}
+
+	// BFS from each unvisited node to find all connected components
+	const visited = new Set<string>();
+	const components: Set<string>[] = [];
+
+	for (const node of nodes) {
+		if (visited.has(node.id)) continue;
+
+		const component = new Set<string>();
+		const queue = [node.id];
+		visited.add(node.id);
+		component.add(node.id);
+
+		while (queue.length > 0) {
+			const current = queue.shift()!;
+			for (const neighbor of neighbors.get(current) ?? []) {
+				if (!visited.has(neighbor)) {
+					visited.add(neighbor);
+					component.add(neighbor);
+					queue.push(neighbor);
+				}
+			}
+		}
+		components.push(component);
+	}
+
+	// Largest component = the main network
+	let largest = components[0];
+	for (const comp of components) {
+		if (comp.size > largest.size) largest = comp;
+	}
+
+	// Island nodes = all nodes NOT in the largest component
+	const islandNodeIds = new Set<string>();
+	for (const node of nodes) {
+		if (!largest.has(node.id)) {
+			islandNodeIds.add(node.id);
+		}
+	}
+
+	// Island edges = edges where BOTH endpoints are island nodes
+	const islandEdgeIds = new Set<string>();
+	for (const edge of edges) {
+		const sId = getSourceId(edge);
+		const tId = getTargetId(edge);
+		if (islandNodeIds.has(sId) && islandNodeIds.has(tId)) {
+			islandEdgeIds.add(edge.id);
+		}
+	}
+
+	return { nodeIds: islandNodeIds, edgeIds: islandEdgeIds };
+}

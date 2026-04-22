@@ -14,6 +14,7 @@ import { ErrorPage } from "./ErrorPage";
 import { HomePage } from "./HomePage";
 import { NetworkStraightPage } from "./NetworkStraightPage";
 import { NetworkPage } from "./NetworkPage";
+import { SystemNetworkPage } from "./SystemNetworkPage";
 import { InitializedLayout } from "./layouts";
 
 const router = createHashRouter([
@@ -33,6 +34,10 @@ const router = createHashRouter([
 			{
 				path: '/network-v2',
 				Component: NetworkStraightPage,
+			},
+			{
+				path: '/system-network',
+				Component: SystemNetworkPage,
 			},
 			{
 				path: '/debug-comparison',

@@ -26,6 +26,12 @@ interface GraphSidebarProps {
 	onLatencyMinutesChange?: (minutes: number) => void;
 	latencyNodeCount?: number;
 	isLoadingLatency?: boolean;
+	/** Hide the latency analysis tool (e.g. when no latency data is available). Default: true. */
+	showLatency?: boolean;
+	/** Override the island result message. Called with the island node count. */
+	islandMessageFn?: (count: number) => string;
+	/** Override the "no islands" message. */
+	islandEmptyMessage?: string;
 }
 
 export const GraphSidebar = ({
@@ -47,6 +53,9 @@ export const GraphSidebar = ({
 	onLatencyMinutesChange,
 	latencyNodeCount,
 	isLoadingLatency = false,
+	showLatency = true,
+	islandMessageFn,
+	islandEmptyMessage,
 }: GraphSidebarProps) => {
 	const days = Math.floor(latencyMinutes / (24 * 60));
 	const hours = Math.floor((latencyMinutes % (24 * 60)) / 60);
@@ -100,12 +109,14 @@ export const GraphSidebar = ({
 				{activeMode === "islands" && islandCount !== undefined && (
 					<div className="text-xs text-gray-500 px-3">
 						{islandCount > 0
-							? `${islandCount} node${islandCount !== 1 ? "s" : ""} disconnected from Admissions`
-							: "All nodes connected to Admissions"}
+							? (islandMessageFn
+								? islandMessageFn(islandCount)
+								: `${islandCount} node${islandCount !== 1 ? "s" : ""} disconnected from Admissions`)
+							: (islandEmptyMessage ?? "All nodes connected to Admissions")}
 					</div>
 				)}
 
-				<Button
+				{showLatency && <Button
 					variant={activeMode === "latency" ? "default" : "outline"}
 					className="h-auto w-full justify-start whitespace-normal py-3 text-left"
 					onClick={() =>
@@ -119,7 +130,8 @@ export const GraphSidebar = ({
 						</div>
 					</div>
 				</Button>
-				{activeMode === "latency" && (
+				}
+				{showLatency && activeMode === "latency" && (
 					<div className="px-1 pt-1 flex flex-col gap-3">
 						{isLoadingLatency && (
 							<div className="text-xs text-gray-500 px-1 py-2">

@@ -191,7 +191,9 @@ export const SystemInspectionPage = () => {
           </div>
         )}
 
-        {details && !isLoadingDetails && <SystemInspectionPanel details={details} />}
+        {details && !isLoadingDetails && (
+          <SystemInspectionPanel details={details} databaseId={DATABASE_ID} />
+        )}
       </div>
     </div>
   );

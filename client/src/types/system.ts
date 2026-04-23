@@ -6,6 +6,18 @@ export interface SystemOption {
   label: string;
 }
 
+/** A capability group with its associated systems. */
+export interface CapabilityGroup {
+  uri: string;
+  label: string;
+  systems: SystemOption[];
+}
+
+/** Response from GetCapabilityGroups reactor. */
+export interface CapabilityGroupsResponse {
+  capabilityGroups: CapabilityGroup[];
+}
+
 /** A labeled URI item: data object, business process, activity, or user type. */
 export interface LabeledItem {
   uri: string;

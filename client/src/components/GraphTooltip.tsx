@@ -47,10 +47,19 @@ export const GraphTooltip = ({ tooltip }: GraphTooltipProps) => {
 					<div className="text-gray-400 text-[10px] uppercase tracking-wide mt-1">
 						{tooltip.edge.edgeType}
 					</div>
-					<div className="mt-1">
-						<span className="text-gray-400">Data:</span>{" "}
-						<span className="text-yellow-300">{tooltip.edge.data || "N/A"}</span>
-					</div>
+					{tooltip.edge.dataObjects && tooltip.edge.dataObjects.length > 0 ? (
+						<div className="mt-1">
+							<div className="text-gray-400 text-[10px] uppercase tracking-wide">Data Objects</div>
+							{tooltip.edge.dataObjects.map((obj, i) => (
+								<div key={i} className="text-yellow-300 ml-1">• {obj}</div>
+							))}
+						</div>
+					) : (
+						<div className="mt-1">
+							<span className="text-gray-400">Data:</span>{" "}
+							<span className="text-yellow-300">{tooltip.edge.data || "N/A"}</span>
+						</div>
+					)}
 					<div>
 						<span className="text-gray-400">Format:</span>{" "}
 						{tooltip.edge.format || "N/A"}
@@ -73,10 +82,19 @@ export const GraphTooltip = ({ tooltip }: GraphTooltipProps) => {
 							<div className="border-t border-gray-600 mt-2 pt-2 text-gray-400 text-[10px] uppercase tracking-wide">
 								{tooltip.targetLabel} → {tooltip.sourceLabel}
 							</div>
-							<div className="mt-1">
-								<span className="text-gray-400">Data:</span>{" "}
-								<span className="text-yellow-300">{tooltip.edge.reverseEdgeData.data || "N/A"}</span>
-							</div>
+							{tooltip.edge.reverseEdgeData.dataObjects && tooltip.edge.reverseEdgeData.dataObjects.length > 0 ? (
+								<div className="mt-1">
+									<div className="text-gray-400 text-[10px] uppercase tracking-wide">Data Objects</div>
+									{tooltip.edge.reverseEdgeData.dataObjects.map((obj, i) => (
+										<div key={i} className="text-yellow-300 ml-1">• {obj}</div>
+									))}
+								</div>
+							) : (
+								<div className="mt-1">
+									<span className="text-gray-400">Data:</span>{" "}
+									<span className="text-yellow-300">{tooltip.edge.reverseEdgeData.data || "N/A"}</span>
+								</div>
+							)}
 							<div>
 								<span className="text-gray-400">Format:</span>{" "}
 								{tooltip.edge.reverseEdgeData.format || "N/A"}

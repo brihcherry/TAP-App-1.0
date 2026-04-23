@@ -11,6 +11,7 @@ interface NetworkGraphProps {
 	edges: ProcessedEdge[];
 	onTooltipChange: (tooltip: TooltipData | null) => void;
 	onNodeClick?: (nodeId: string) => void;
+	onEdgeClick?: (sourceId: string, targetId: string) => void;
 	highlightSet?: HighlightSet | null;
 	isInteractionLocked?: boolean;
 	/** Perpendicular bow distance for edges (px). 0 = straight lines. Default: 30. */
@@ -36,6 +37,7 @@ export const NetworkGraph = ({
 	edges,
 	onTooltipChange,
 	onNodeClick,
+	onEdgeClick,
 	highlightSet,
 	isInteractionLocked = false,
 	curveOffset = 30,
@@ -87,6 +89,8 @@ export const NetworkGraph = ({
 			const seen = new Map<string, ProcessedEdge>();
 			const result: ProcessedEdge[] = [];
 			for (const edge of edges) {
+				// Per-data-object edges should never be merged
+				if (edge.noMerge) { result.push(edge); continue; }
 				const key = pairKey(edge.sourceId, edge.targetId);
 				if (seen.has(key)) {
 					const kept = seen.get(key)!;
@@ -101,6 +105,7 @@ export const NetworkGraph = ({
 						protocol: edge.protocol,
 						frequency: edge.frequency,
 						interfaceName: edge.interfaceName,
+						dataObjects: edge.dataObjects,
 					};
 				} else {
 					edge.bidirectional = false; // reset in case of re-init
@@ -178,6 +183,11 @@ export const NetworkGraph = ({
 			})
 			.on("mouseleave", () => {
 				onTooltipChangeRef.current(null);
+			})
+			.attr("cursor", "pointer")
+			.on("click", (event: MouseEvent, d: ProcessedEdge) => {
+				event.stopPropagation();
+				onEdgeClick?.(d.sourceId, d.targetId);
 			});
 
 		linkGroupRef.current = linkGroup;
@@ -310,8 +320,9 @@ export const NetworkGraph = ({
 					// Perpendicular unit vector
 					const px = -dy / len;
 					const py = dx / len;
-const cx = mx + px * curveOffset;
-				const cy = my + py * curveOffset;
+					const edgeOffset = curveOffset + (d.curveIndex ?? 0) * 25;
+const cx = mx + px * edgeOffset;
+				const cy = my + py * edgeOffset;
 
 					return `M ${sx},${sy} Q ${cx},${cy} ${tx},${ty}`;
 				});
@@ -338,7 +349,7 @@ const cx = mx + px * curveOffset;
 					d3.zoomIdentity.translate(tx, ty).scale(scale),
 				);
 		});
-	}, [nodes, edges, curveOffset, mergeBidirectional, isInteractionLocked, chargeStrength, linkDistance]);
+	}, [nodes, edges, curveOffset, mergeBidirectional, isInteractionLocked, chargeStrength, linkDistance, onEdgeClick]);
 
 	useEffect(() => {
 		initGraph();

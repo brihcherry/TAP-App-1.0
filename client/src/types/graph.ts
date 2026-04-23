@@ -49,6 +49,12 @@ export interface ProcessedEdge extends d3.SimulationLinkDatum<ProcessedNode> {
 	protocol: string;
 	frequency: string;
 	interfaceName: string;
+	/** Per-data-object labels for rich tooltip display on aggregated edges. */
+	dataObjects?: string[];
+	/** Per-edge curve offset index for parallel edge spreading. 0 = center/straight. */
+	curveIndex?: number;
+	/** Prevent bidirectional merging for this edge (used by per-data-object edges). */
+	noMerge?: boolean;
 	/** Set by NetworkGraph when mergeBidirectional=true: two opposite edges merged into one. */
 	bidirectional?: boolean;
 	/** Metadata from the reverse edge (target→source) when bidirectional=true. */
@@ -59,6 +65,7 @@ export interface ProcessedEdge extends d3.SimulationLinkDatum<ProcessedNode> {
 		protocol: string;
 		frequency: string;
 		interfaceName: string;
+		dataObjects?: string[];
 	};
 }
 

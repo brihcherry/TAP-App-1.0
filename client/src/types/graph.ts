@@ -37,6 +37,30 @@ export interface ProcessedNode extends d3.SimulationNodeDatum {
 	propHash: Record<string, unknown>;
 }
 
+/**
+ * One interface node and the data objects it carries in a given direction.
+ * Populated from raw "carries" edges in the tripartite graph — not label parsing.
+ */
+export interface InterfaceRecord {
+	label: string;
+	dataObjects: string[];
+}
+
+/**
+ * All data flows in one direction between a pair of systems.
+ * Aggregates every interface that connects them in that direction.
+ */
+export interface DirectionBucket {
+	fromUri: string;
+	toUri: string;
+	/** Unique, sorted data object labels crossing in this direction. */
+	dataObjects: string[];
+	/** Per-interface breakdown: one record per distinct interface in this direction. */
+	interfaces: InterfaceRecord[];
+	/** False when no interfaces carry data in this direction. */
+	hasFlow: boolean;
+}
+
 /** Processed edge ready for D3 force simulation. */
 export interface ProcessedEdge extends d3.SimulationLinkDatum<ProcessedNode> {
 	id: string;
@@ -55,9 +79,27 @@ export interface ProcessedEdge extends d3.SimulationLinkDatum<ProcessedNode> {
 	curveIndex?: number;
 	/** Prevent bidirectional merging for this edge (used by per-data-object edges). */
 	noMerge?: boolean;
-	/** Set by NetworkGraph when mergeBidirectional=true: two opposite edges merged into one. */
+	/**
+	 * True when data flows in both directions between this pair.
+	 * Set by systemSubgraph (canonical connection edges) or by NetworkGraph merge loop
+	 * (legacy DataObject graph path).
+	 */
 	bidirectional?: boolean;
-	/** Metadata from the reverse edge (target→source) when bidirectional=true. */
+	/**
+	 * Forward direction bucket: sourceId → targetId flows.
+	 * Present on connection edges produced by systemSubgraph; absent on legacy edges.
+	 */
+	forward?: DirectionBucket;
+	/**
+	 * Reverse direction bucket: targetId → sourceId flows.
+	 * Present on connection edges produced by systemSubgraph; absent on legacy edges.
+	 * Check reverse.hasFlow before rendering — it may be empty for one-directional edges.
+	 */
+	reverse?: DirectionBucket;
+	/**
+	 * @deprecated Use reverse DirectionBucket instead.
+	 * Retained for the legacy DataObject graph (NetworkPage) merge path only.
+	 */
 	reverseEdgeData?: {
 		edgeType: string;
 		data: string;

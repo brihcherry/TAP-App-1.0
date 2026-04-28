@@ -8,12 +8,13 @@
 // Interfaces are structural glue — they encode "System A sends data to System B."
 // This module resolves them away, producing a direct system-to-system graph where:
 //   - Nodes  = Systems only
-//   - Edges  = directed data flows between systems
-//   - Edge metadata = which data objects are exchanged (+ originating interface names)
+//   - Edges  = ONE canonical edge per system pair, with two DirectionBuckets
+//              (forward: sourceId→targetId, reverse: targetId→sourceId)
+//   - Edge metadata = data objects from raw "carries" edges — NOT label parsing
 //
 // BFS from a selected system bounds the graph by "degree" (system-hop count).
 
-import type { ProcessedNode, ProcessedEdge, LegendEntry } from "@/types/graph";
+import type { ProcessedNode, ProcessedEdge, LegendEntry, InterfaceRecord, DirectionBucket } from "@/types/graph";
 
 // ── Raw types from GetSystemNetworkReactor ────────────────────────────────────
 
@@ -53,9 +54,14 @@ export interface SubgraphResult {
 
 // ── Internal types ────────────────────────────────────────────────────────────
 
-/** A single directional data flow through an interface. */
+/**
+ * One data flow contribution from a single interface.
+ * dataObjectLabel comes from raw "carries" edges in the tripartite graph —
+ * NOT from parsing the interface label string.
+ */
 interface DataFlow {
-	dataObject: string;
+	dataObjectLabel: string;
+	interfaceUri: string;
 	interfaceLabel: string;
 }
 
@@ -64,7 +70,6 @@ interface AggregatedEdge {
 	fromUri: string;
 	toUri: string;
 	flows: DataFlow[];
-	interfaceLabels: Set<string>;
 }
 
 /** Pre-computed system-level graph derived from raw tripartite data. */
@@ -85,20 +90,29 @@ export function canonicalPairKey(a: string, b: string): string {
 }
 
 /**
- * Parse the data object name from an interface label.
- * Interface label format: "ProvidingSystem%ConsumingSystem%DataObject"
+ * Build an InterfaceRecord[] from a directional AggregatedEdge by grouping
+ * DataFlow entries by interface URI.
  */
-function parseDataObjectFromLabel(label: string): string | null {
-	const parts = label.split("%");
-	return parts.length >= 3 ? parts.slice(2).join("%").trim() : null;
+function buildInterfaceRecords(agg: AggregatedEdge): InterfaceRecord[] {
+	const byUri = new Map<string, InterfaceRecord>();
+	for (const flow of agg.flows) {
+		if (!byUri.has(flow.interfaceUri)) {
+			byUri.set(flow.interfaceUri, { label: flow.interfaceLabel, dataObjects: [] });
+		}
+		const rec = byUri.get(flow.interfaceUri)!;
+		if (!rec.dataObjects.includes(flow.dataObjectLabel)) {
+			rec.dataObjects.push(flow.dataObjectLabel);
+		}
+	}
+	return [...byUri.values()];
 }
 
 // ── Step 1: Resolve interfaces into system-to-system flows ────────────────────
 //
 // For each Interface node, determine:
-//   - Provider system  (System --[Provide]--> Interface)
-//   - Consumer systems (Interface --[Consume]--> System)
-//   - Data objects     (Interface --[carries]--> DataObject)
+//   - Provider system    (System --[Provide]--> Interface)
+//   - Consumer systems   (Interface --[Consume]--> System)
+//   - Data objects       (Interface --[carries]--> DataObject)  ← from raw edges
 // Then create direct flows: provider → each consumer, carrying those data objects.
 
 function buildSystemGraph(raw: RawNetworkData): SystemGraph {
@@ -107,9 +121,24 @@ function buildSystemGraph(raw: RawNetworkData): SystemGraph {
 		raw.nodes.filter((n) => n.type === "Interface").map((n) => n.uri),
 	);
 
-	// Classify every raw edge by its role relative to interfaces
-	const providerOf   = new Map<string, string>();     // ifc URI → providing system URI
-	const consumersOf  = new Map<string, string[]>();    // ifc URI → consuming system URIs
+	// ── Build interface → data object labels map from raw "carries" edges ────
+	// This is the authoritative source: Interface --[carries]--> DataObject.
+	// Each DataObject node's label is the human-readable name (already extracted
+	// by GetSystemNetworkReactor via extractLabel()).
+	const ifcToDataObjects = new Map<string, string[]>(); // ifcUri → sorted labels
+	for (const edge of raw.edges) {
+		if (edge.edgeType !== "carries") continue;
+		const ifcUri = edge.sourceUri;
+		const dataNode = nodesByUri.get(edge.targetUri);
+		if (!dataNode || !interfaceUris.has(ifcUri)) continue;
+		if (!ifcToDataObjects.has(ifcUri)) ifcToDataObjects.set(ifcUri, []);
+		const labels = ifcToDataObjects.get(ifcUri)!;
+		if (!labels.includes(dataNode.label)) labels.push(dataNode.label);
+	}
+
+	// ── Classify provider/consumer relationships ──────────────────────────────
+	const providerOf  = new Map<string, string>();    // ifcUri → providing system URI
+	const consumersOf = new Map<string, string[]>();  // ifcUri → consuming system URIs
 
 	for (const edge of raw.edges) {
 		if (edge.edgeType === "provide" && interfaceUris.has(edge.targetUri)) {
@@ -120,40 +149,38 @@ function buildSystemGraph(raw: RawNetworkData): SystemGraph {
 		}
 	}
 
-	// Aggregate: for each (provider → consumer) direction, collect data flows
-	// from all interfaces connecting them. Data object is parsed from the
-	// interface label (format: "Provider%Consumer%DataObject").
-	const edges = new Map<string, AggregatedEdge>();
+	// ── Aggregate directional system-to-system flows ──────────────────────────
+	const edges    = new Map<string, AggregatedEdge>();
 	const adjacency = new Map<string, Set<string>>();
 
 	for (const ifcUri of interfaceUris) {
 		const provider  = providerOf.get(ifcUri);
 		const consumers = consumersOf.get(ifcUri) ?? [];
 		const ifcNode   = nodesByUri.get(ifcUri);
-
 		if (!provider || consumers.length === 0) continue;
 
-		// Parse data object from interface label
-		const dataObject = ifcNode ? parseDataObjectFromLabel(ifcNode.label) : null;
+		const dataObjectLabels = ifcToDataObjects.get(ifcUri) ?? [];
+
+		// Skip interfaces with no data objects — the reactor now filters these
+		// out via the Payload existence check, but defend in depth here too.
+		if (dataObjectLabels.length === 0) continue;
 
 		for (const consumer of consumers) {
 			if (provider === consumer) continue; // skip self-loops
 
 			const key = `${provider}||${consumer}`;
 			if (!edges.has(key)) {
-				edges.set(key, {
-					fromUri: provider,
-					toUri: consumer,
-					flows: [],
-					interfaceLabels: new Set(),
+				edges.set(key, { fromUri: provider, toUri: consumer, flows: [] });
+			}
+			const agg = edges.get(key)!;
+
+			for (const doLabel of dataObjectLabels) {
+				agg.flows.push({
+					dataObjectLabel: doLabel,
+					interfaceUri: ifcUri,
+					interfaceLabel: ifcNode?.label ?? "",
 				});
 			}
-
-			const agg = edges.get(key)!;
-			if (dataObject) {
-				agg.flows.push({ dataObject, interfaceLabel: ifcNode!.label });
-			}
-			if (ifcNode) agg.interfaceLabels.add(ifcNode.label);
 
 			// Undirected adjacency for BFS traversal
 			if (!adjacency.has(provider)) adjacency.set(provider, new Set());
@@ -210,8 +237,9 @@ export function computeMaxDegree(raw: RawNetworkData, systemUri: string): number
 
 /**
  * Compute a degree-bounded, system-to-system subgraph centered on a selected
- * system. Interfaces are resolved into direct edges whose metadata lists the
- * data objects exchanged.
+ * system. Interfaces are resolved into direct edges. Each edge is a canonical
+ * pair (one per system pair, not one per direction) with two DirectionBuckets
+ * whose data objects come from raw "carries" edges — not label parsing.
  *
  * @param raw       Full network data from GetSystemNetworkReactor
  * @param systemUri URI of the selected system (center node)
@@ -249,70 +277,136 @@ export function computeSubgraph(
 		frontier = next;
 	}
 
-	// ── Build edges: only those between systems in the visited set ────────────
+	// ── Build canonical connection edges (one per system pair) ────────────────
+	//
+	// Collect the canonical pair keys for all directional edges whose both
+	// endpoints are in the visited set, then build one ProcessedEdge per pair
+	// with explicit forward (sourceId→targetId) and reverse (targetId→sourceId)
+	// DirectionBuckets populated from raw carries data.
 
 	const connectionCounts = new Map<string, number>();
 	const edges: ProcessedEdge[] = [];
 	const perDataObjectEdges = new Map<string, ProcessedEdge[]>();
 
+	const canonicalPairs = new Set<string>();
 	for (const [, agg] of graph.edges) {
 		if (!visited.has(agg.fromUri) || !visited.has(agg.toUri)) continue;
+		canonicalPairs.add(canonicalPairKey(agg.fromUri, agg.toUri));
+	}
 
-		// Unique data object labels for this direction
-		const dataObjects = [...new Set(agg.flows.map((f) => f.dataObject))].sort();
-		const dataStr = dataObjects.length > 0 ? dataObjects.join(", ") : "N/A";
-		const ifcStr  = [...agg.interfaceLabels].sort().join(", ") || "";
+	for (const cpk of canonicalPairs) {
+		const [a, b] = cpk.split("||");
+		const fwd = graph.edges.get(`${a}||${b}`); // a → b
+		const rev = graph.edges.get(`${b}||${a}`); // b → a
+
+		// sourceId/targetId: if a forward (a→b) flow exists use that as primary
+		// direction; otherwise the only flow is b→a so flip.
+		const sourceUri = fwd ? a : b;
+		const targetUri = fwd ? b : a;
+		const forwardAgg = (fwd ?? rev)!;
+		const reverseAgg = fwd ? rev : undefined;
+
+		const forwardDataObjects = [
+			...new Set(
+				forwardAgg.flows
+					.map((f) => f.dataObjectLabel)
+					.filter((l) => l.length > 0),
+			),
+		].sort();
+		const reverseDataObjects = reverseAgg
+			? [
+					...new Set(
+						reverseAgg.flows
+							.map((f) => f.dataObjectLabel)
+							.filter((l) => l.length > 0),
+					),
+				].sort()
+			: [];
+
+		const forwardInterfaces = buildInterfaceRecords(forwardAgg);
+		const reverseInterfaces = reverseAgg ? buildInterfaceRecords(reverseAgg) : [];
+		const isBidirectional   = reverseAgg !== undefined;
+
+		const forwardBucket: DirectionBucket = {
+			fromUri: sourceUri,
+			toUri: targetUri,
+			dataObjects: forwardDataObjects,
+			interfaces: forwardInterfaces,
+			hasFlow: true,
+		};
+		const reverseBucket: DirectionBucket = {
+			fromUri: targetUri,
+			toUri: sourceUri,
+			dataObjects: reverseDataObjects,
+			interfaces: reverseInterfaces,
+			hasFlow: isBidirectional,
+		};
+
+		const displayLabel = forwardDataObjects.length > 0
+			? forwardDataObjects.join(", ")
+			: "N/A";
 
 		edges.push({
-			id: `${agg.fromUri}||${agg.toUri}`,
-			source: agg.fromUri,
-			target: agg.toUri,
-			sourceId: agg.fromUri,
-			targetId: agg.toUri,
+			id: cpk,
+			source: sourceUri,
+			target: targetUri,
+			sourceId: sourceUri,
+			targetId: targetUri,
 			edgeType: "Data Flow",
-			edgeName: dataStr,
-			data: dataStr,
+			edgeName: displayLabel,
+			data: displayLabel,
 			format: "",
 			protocol: "",
 			frequency: "",
-			interfaceName: ifcStr,
-			dataObjects: dataObjects.length > 0 ? dataObjects : undefined,
+			interfaceName: "",
+			dataObjects: forwardDataObjects.length > 0 ? forwardDataObjects : undefined,
+			bidirectional: isBidirectional,
+			forward: forwardBucket,
+			reverse: reverseBucket,
 		});
 
-		connectionCounts.set(agg.fromUri, (connectionCounts.get(agg.fromUri) ?? 0) + 1);
-		connectionCounts.set(agg.toUri,   (connectionCounts.get(agg.toUri)   ?? 0) + 1);
+		connectionCounts.set(sourceUri, (connectionCounts.get(sourceUri) ?? 0) + 1);
+		connectionCounts.set(targetUri, (connectionCounts.get(targetUri) ?? 0) + 1);
 	}
 
-	// ── Build per-data-object edges for exploded view ─────────────────────────
-	// Group all directional flows by canonical pair, then create one edge per
-	// data object per direction with curveIndex for visual fanning.
+	// ── Build per-data-object exploded edges for the "click-to-expand" view ───
+	//
+	// Groups all directional flows in visited set by canonical pair, then creates
+	// one ProcessedEdge per unique (direction, dataObject) combination with
+	// symmetric curveIndex offsets for visual fanning.
 
-	const pairFlows = new Map<string, { fromUri: string; toUri: string; dataObject: string }[]>();
+	const pairFlows = new Map<
+		string,
+		{ fromUri: string; toUri: string; dataObject: string }[]
+	>();
 
 	for (const [, agg] of graph.edges) {
 		if (!visited.has(agg.fromUri) || !visited.has(agg.toUri)) continue;
 		const cpk = canonicalPairKey(agg.fromUri, agg.toUri);
 		if (!pairFlows.has(cpk)) pairFlows.set(cpk, []);
 		for (const flow of agg.flows) {
+			if (!flow.dataObjectLabel) continue;
 			pairFlows.get(cpk)!.push({
 				fromUri: agg.fromUri,
 				toUri: agg.toUri,
-				dataObject: flow.dataObject,
+				dataObject: flow.dataObjectLabel,
 			});
 		}
 	}
 
 	for (const [cpk, flows] of pairFlows) {
-		// Deduplicate flows (same direction + dataObject)
+		// Deduplicate: one exploded edge per unique (direction + dataObject) pair
 		const uniqueFlows = [
-			...new Map(flows.map((f) => [`${f.fromUri}||${f.toUri}||${f.dataObject}`, f])).values(),
+			...new Map(
+				flows.map((f) => [`${f.fromUri}||${f.toUri}||${f.dataObject}`, f]),
+			).values(),
 		];
 		const n = uniqueFlows.length;
 		const exploded: ProcessedEdge[] = [];
 
 		for (let i = 0; i < n; i++) {
 			const f = uniqueFlows[i];
-			// Symmetric curve indices: -(n-1)/2, ..., 0, ..., (n-1)/2
+			// Symmetric curve indices: -(n-1)/2, …, 0, …, (n-1)/2
 			const curveIndex = i - (n - 1) / 2;
 			exploded.push({
 				id: `${f.fromUri}||${f.toUri}||${f.dataObject}`,

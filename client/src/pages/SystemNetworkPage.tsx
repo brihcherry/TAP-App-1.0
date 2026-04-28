@@ -1,5 +1,5 @@
 // SystemNetworkPage.tsx — System Network Map with two views:
-//   1. Directory listing of all Systems and Interfaces with connection counts
+//   1. Directory listing of all Systems with connection counts
 //   2. Click-to-graph: D3 force-directed subgraph centered on a selected system
 //      with degree-based expansion (BFS through System↔Interface↔DataObject)
 //
@@ -19,7 +19,6 @@ const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
 
 const TYPE_COLORS: Record<string, string> = {
   System: "rgb(31, 119, 180)",
-  Interface: "rgb(148, 103, 189)",
 };
 
 // ── Processed entry for the list ──────────────────────────────────────────────
@@ -27,7 +26,7 @@ const TYPE_COLORS: Record<string, string> = {
 interface NetworkEntry {
   uri: string;
   label: string;
-  type: "System" | "Interface";
+  type: "System";
   connectionCount: number;
 }
 
@@ -39,19 +38,17 @@ function buildEntries(raw: RawNetworkData): NetworkEntry[] {
   }
 
   return raw.nodes
-    .filter((n) => n.type === "System" || n.type === "Interface")
+    .filter((n) => n.type === "System")
     .map((n) => ({
       uri: n.uri,
       label: n.label,
-      type: n.type as "System" | "Interface",
+      type: "System" as const,
       connectionCount: counts.get(n.uri) ?? 0,
     }))
     .sort((a, b) => b.connectionCount - a.connectionCount);
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
-
-type ActiveTab = "System" | "Interface";
 
 export const SystemNetworkPage = () => {
   const { insightId } = useInsight();
@@ -63,7 +60,6 @@ export const SystemNetworkPage = () => {
   const [error, setError] = useState<string | null>(null);
 
   // List view state
-  const [activeTab, setActiveTab] = useState<ActiveTab>("System");
   const [search, setSearch] = useState("");
 
   // Graph view state
@@ -111,18 +107,8 @@ export const SystemNetworkPage = () => {
   const filtered = useMemo(() => {
     if (!entries) return [];
     const q = search.trim().toLowerCase();
-    return entries.filter(
-      (e) => e.type === activeTab && (q === "" || e.label.toLowerCase().includes(q)),
-    );
-  }, [entries, activeTab, search]);
-
-  const systemCount = entries?.filter((e) => e.type === "System").length ?? 0;
-  const ifcCount = entries?.filter((e) => e.type === "Interface").length ?? 0;
-
-  const tabs: { id: ActiveTab; label: string; count: number }[] = [
-    { id: "System", label: "Systems", count: systemCount },
-    { id: "Interface", label: "Interfaces", count: ifcCount },
-  ];
+    return entries.filter((e) => q === "" || e.label.toLowerCase().includes(q));
+  }, [entries, search]);
 
   // ── Subgraph computation (only when a system is selected) ─────────────────
   const subgraph = useMemo(() => {
@@ -252,7 +238,6 @@ export const SystemNetworkPage = () => {
                   onEdgeClick={handleEdgeClick}
                   isInteractionLocked={isGraphLocked}
                   curveOffset={0}
-                  mergeBidirectional={true}
                 />
                 <GraphLegend entries={subgraph.legend} />
                 <GraphTooltip tooltip={tooltip} />
@@ -271,7 +256,7 @@ export const SystemNetworkPage = () => {
       <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
         <h1 className="text-lg font-semibold text-gray-900">System Network Map</h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          All systems and interfaces with their connection counts
+          Click into each system to view the network of data flow between other systems. 
         </p>
       </header>
 
@@ -296,54 +281,22 @@ export const SystemNetworkPage = () => {
       {/* Content */}
       {entries && !isLoading && (
         <div className="flex flex-1 flex-col overflow-hidden bg-gray-50">
-          {/* Tabs + search bar */}
-          <div className="shrink-0 border-b border-gray-200 bg-white px-6">
-            <div className="flex items-end justify-between gap-4">
-              {/* Tabs */}
-              <div className="flex gap-1">
-                {tabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => { setActiveTab(tab.id); setSearch(""); }}
-                    className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
-                      activeTab === tab.id
-                        ? "border-blue-600 text-blue-600"
-                        : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
-                    }`}
-                  >
-                    {tab.label}
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                        activeTab === tab.id
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
-                      {tab.count}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Search */}
-              <div className="pb-2">
-                <input
-                  type="search"
-                  placeholder={`Search ${activeTab === "System" ? "systems" : "interfaces"}…`}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-56 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-            </div>
+          {/* Search bar */}
+          <div className="shrink-0 border-b border-gray-200 bg-white px-6 py-3">
+            <input
+              type="search"
+              placeholder="Search systems…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-56 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
           </div>
 
           {/* Entry list */}
           <div className="flex-1 overflow-y-auto p-6">
             {filtered.length === 0 ? (
               <p className="text-sm italic text-gray-400">
-                {search ? `No results for "${search}"` : `No ${activeTab === "System" ? "systems" : "interfaces"} found.`}
+                {search ? `No results for "${search}"` : "No systems found."}
               </p>
             ) : (
               <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -383,10 +336,9 @@ export const SystemNetworkPage = () => {
             {/* Result count footer */}
             {filtered.length > 0 && (
               <p className="mt-4 text-xs text-gray-400">
-                Showing {filtered.length} {activeTab === "System" ? "system" : "interface"}
-                {filtered.length !== 1 ? "s" : ""}
+                Showing {filtered.length} system{filtered.length !== 1 ? "s" : ""}
                 {search ? ` matching "${search}"` : ""} · sorted by connections (highest first)
-                {activeTab === "System" && " · click a system to view its network graph"}
+                {" · click a system to view its network graph"}
               </p>
             )}
           </div>

@@ -18,12 +18,19 @@ import reactors.AbstractProjectReactor;
 import util.QueryExecutor;
 
 /**
- * Returns the full tripartite system network from the TAP_Core_Data RDF database:
- * System nodes, Interface nodes, and DataObject nodes, connected by their actual
- * RDF relations (Provide, Consume, Contains/Data).
+ * Returns the data-flow-only tripartite system network from the TAP_Core_Data
+ * RDF database: System nodes, Interface nodes, and DataObject nodes.
  *
- * <p>This allows the frontend to render and color each node type distinctly and
- * run graph analysis (loops, islands, connection tracing) on the full data flow graph.
+ * <p>Only interfaces that carry at least one DataObject (via the Payload relation)
+ * are included. Systems connected solely through data-less interfaces are excluded.
+ * This ensures the graph represents actual data flow between systems.
+ *
+ * <p>Relations used:
+ * <ul>
+ *   <li>System --[Provide]--> SystemInterface (from System_SystemInterface_Provide sheet)</li>
+ *   <li>SystemInterface --[Consume]--> System (from SystemInterface_System_Consume sheet)</li>
+ *   <li>SystemInterface --[Payload]--> DataObject (data object column on those sheets)</li>
+ * </ul>
  *
  * <p>Pixel call:
  * <pre>
@@ -75,12 +82,15 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
     List<Map<String, String>> edgeList = new ArrayList<>();
     Set<String> edgeSeen = new HashSet<>();
 
-    // ── Query 1: System --[Provide]--> Interface ──────────────────────────────
+    // ── Query 1: System --[Provide]--> Interface (data-carrying only) ─────────
+    // Only include interfaces that have at least one Payload→DataObject triple.
+    // This filters out interface-only connections with no recorded data flow.
     String provideQuery =
         "SELECT DISTINCT ?System ?Interface WHERE {"
         + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
         + "{?System <" + BASE + "/Relation/Provide> ?Interface}"
+        + "{?Interface <" + BASE + "/Relation/Payload> ?anyData}"
         + "} ORDER BY ?System";
 
     for (Map<String, String> row : executor.executeSelect(provideQuery)) {
@@ -93,13 +103,17 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
 
       addEdge(edgeList, edgeSeen, sys, ifc, "provide");
     }
+    LOGGER.info("GetSystemNetwork: Query 1 (Provide w/ Payload filter) returned "
+        + nodeMap.size() + " nodes so far");
 
-    // ── Query 2: Interface --[Consume]--> System ──────────────────────────────
+    // ── Query 2: Interface --[Consume]--> System (data-carrying only) ─────────
+    // Same Payload filter — only interfaces that carry data objects.
     String consumeQuery =
         "SELECT DISTINCT ?Interface ?System WHERE {"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
         + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?Interface <" + BASE + "/Relation/Consume> ?System}"
+        + "{?Interface <" + BASE + "/Relation/Payload> ?anyData}"
         + "} ORDER BY ?Interface";
 
     for (Map<String, String> row : executor.executeSelect(consumeQuery)) {
@@ -112,25 +126,31 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
 
       addEdge(edgeList, edgeSeen, ifc, sys, "consume");
     }
+    LOGGER.info("GetSystemNetwork: Query 2 (Consume w/ Payload filter) returned "
+        + edgeList.size() + " edges so far");
 
-    // ── Query 3: Interface --[Contains/Data]--> DataObject ────────────────────
+    // ── Query 3: Interface --[Payload]--> DataObject ──────────────────────────
+    // Uses the Payload relation (per OWL: SystemInterface --[Payload]--> DataObject)
+    // instead of the old Contains/Data which was a Task property.
     String dataQuery =
-        "SELECT DISTINCT ?Interface ?Data WHERE {"
+        "SELECT DISTINCT ?Interface ?DataObj WHERE {"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
-        + "{?Interface <" + BASE + "/Relation/Contains/Data> ?Data}"
+        + "{?Interface <" + BASE + "/Relation/Payload> ?DataObj}"
         + "} ORDER BY ?Interface";
 
     for (Map<String, String> row : executor.executeSelect(dataQuery)) {
       String ifc = row.get("Interface");
-      String data = row.get("Data");
+      String data = row.get("DataObj");
       if (ifc == null || data == null) continue;
 
-      // Only include data objects that are connected to known interfaces
+      // Only include data objects connected to interfaces that passed the
+      // Provide/Consume filter (i.e., they appeared in Query 1 or 2).
       if (!nodeMap.containsKey(ifc)) continue;
 
       nodeMap.putIfAbsent(data, new String[] { extractLabel(data), "DataObject" });
       addEdge(edgeList, edgeSeen, ifc, data, "carries");
     }
+    LOGGER.info("GetSystemNetwork: Query 3 (Payload) — total edges now: " + edgeList.size());
 
     // ── Build output ──────────────────────────────────────────────────────────
     List<Map<String, String>> nodes = new ArrayList<>();
@@ -175,8 +195,8 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
 
   @Override
   public String getReactorDescription() {
-    return "Returns the full tripartite system network (Systems, Interfaces, DataObjects) "
-        + "with all Provide, Consume, and Contains/Data edges. Used by the System Network Map.";
+    return "Returns the data-flow-only system network (Systems, Interfaces, DataObjects) "
+        + "filtered to interfaces with Payload data. Used by the System Network Map.";
   }
 
   @Override

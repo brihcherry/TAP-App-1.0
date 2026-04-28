@@ -16,10 +16,9 @@ const GROUP_COLORS = [
 ];
 
 const PACK_SCALE = 0.84;
-const ROOT_PADDING = 56;
-const GROUP_PADDING = 26;
-const SYSTEM_TITLE_OFFSET = 12;
-const GROUP_TITLE_OFFSET = 0.92;
+const ROOT_PADDING = 64;
+const GROUP_PADDING = 30;
+const SYSTEM_TITLE_OFFSET = 10;
 
 function getGroupColor(index: number): string {
 	return GROUP_COLORS[index % GROUP_COLORS.length];
@@ -235,32 +234,32 @@ export const CapabilityBubbleGraph = ({
 				.style("animation", `bubbleFloat ${dur}s ease-in-out ${delay}s infinite`);
 		});
 
-		// ── Group labels — positioned at TOP of group circle ─────────────────
+		// ── Group labels — rendered ABOVE the circle boundary ───────────────
 		const groupLabel = g.selectAll<SVGTextElement, d3.HierarchyCircularNode<HierarchyDatum>>(".group-label")
 			.data(groupNodes)
 			.join("text")
 			.attr("class", "group-label")
 			.attr("text-anchor", "middle")
-			.attr("dominant-baseline", "hanging")
+			.attr("dominant-baseline", "auto") // baseline at y → text grows upward
 			.attr("pointer-events", "none")
 			.attr("fill", (d) => getGroupColor(d.data.groupIndex ?? 0))
-			.attr("font-weight", "600")
+			.attr("font-weight", "700")
 			.attr("paint-order", "stroke")
-			.attr("stroke", "rgba(255,255,255,0.9)")
-			.attr("stroke-width", 4)
+			.attr("stroke", "rgba(255,255,255,0.95)")
+			.attr("stroke-width", 5)
 			.attr("stroke-linejoin", "round")
 			.attr("letter-spacing", "0.02em")
 			.text((d) => d.data.name);
 
-		// Count badge — just below group label
+		// Count badge — inside the circle centre, only for groups large enough
 		const countLabel = g.selectAll<SVGTextElement, d3.HierarchyCircularNode<HierarchyDatum>>(".count-label")
 			.data(groupNodes)
 			.join("text")
 			.attr("class", "count-label")
 			.attr("text-anchor", "middle")
-			.attr("dominant-baseline", "hanging")
+			.attr("dominant-baseline", "central")
 			.attr("pointer-events", "none")
-			.attr("fill", (d) => d3.color(getGroupColor(d.data.groupIndex ?? 0))!.copy({ opacity: 0.5 }).formatRgb())
+			.attr("fill", (d) => d3.color(getGroupColor(d.data.groupIndex ?? 0))!.copy({ opacity: 0.45 }).formatRgb())
 			.attr("font-weight", "400")
 			.attr("paint-order", "stroke")
 			.attr("stroke", "rgba(255,255,255,0.7)")
@@ -304,25 +303,22 @@ export const CapabilityBubbleGraph = ({
 					return canSelectSystem(d) ? "pointer" : "default";
 				});
 
-			// Group labels at top of circle
+			// Group labels: always above circle boundary
 			groupLabel
 				.attr("x", (d) => (d.x - v[0]) * k + ox + packSize / 2)
-				.attr("y", (d) => (d.y - v[1]) * k + oy + packSize / 2 - d.r * k * GROUP_TITLE_OFFSET)
-				.attr("font-size", (d) => `${Math.max(Math.min(d.r * k / 4.8, 14), 9)}px`)
+				// y is just above the top edge of the circle; dominant-baseline:auto → text grows upward
+				.attr("y", (d) => (d.y - v[1]) * k + oy + packSize / 2 - d.r * k - 5)
+				.attr("font-size", (d) => `${Math.max(Math.min(d.r * k / 4.5, 13), 9)}px`)
 				.attr("opacity", () => focus === packedRoot ? 1 : 0)
-				.attr("display", (d) => d.r * k > 26 ? null : "none");
+				.attr("display", null); // always attempt to render
 
-			// Count label just below group label
+			// Count badge: inside circle at centre, only when interior is spacious
 			countLabel
 				.attr("x", (d) => (d.x - v[0]) * k + ox + packSize / 2)
-				.attr("y", (d) => {
-					const cy = (d.y - v[1]) * k + oy + packSize / 2;
-					const fs = Math.min(d.r * k / 4.6, 14);
-					return cy - d.r * k * GROUP_TITLE_OFFSET + fs + 4;
-				})
-				.attr("font-size", (d) => `${Math.max(Math.min(d.r * k / 6, 10), 8)}px`)
+				.attr("y", (d) => (d.y - v[1]) * k + oy + packSize / 2)
+				.attr("font-size", (d) => `${Math.min(d.r * k / 5.5, 11)}px`)
 				.attr("opacity", () => focus === packedRoot ? 1 : 0)
-				.attr("display", (d) => d.r * k > 32 ? null : "none");
+				.attr("display", (d) => d.r * k > 52 ? null : "none");
 
 			// System labels
 			sysLabel

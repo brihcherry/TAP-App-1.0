@@ -1,10 +1,115 @@
 // GraphTooltip.tsx — Floating tooltip that follows the cursor when hovering
 // over a node or edge in the network graph.
+//
+// Edge tooltip layout (when edge.forward is present — System Network Map path):
+//   ┌─────────────────────────────────────┐
+//   │ Connection: System A ↔ System B     │
+//   ├─────────────────────────────────────┤
+//   │ ▸ System A → System B               │
+//   │   • DataObject 1                    │
+//   │   • DataObject 2   (+N more)        │
+//   │   Interface 1  ↳ DO1, DO2           │
+//   │   (+N more interfaces)              │
+//   ├─────────────────────────────────────┤
+//   │ ▸ System B → System A               │
+//   │   No data flow   (if one-way)       │
+//   └─────────────────────────────────────┘
+//
+// Truncation: show at most MAX_DATA_OBJECTS data objects and MAX_INTERFACES
+// interface records per direction section, with "+N more" indicators.
 
-import type { TooltipData } from "@/types/graph";
+import type { TooltipData, DirectionBucket } from "@/types/graph";
 
 interface GraphTooltipProps {
 	tooltip: TooltipData | null;
+}
+
+const MAX_DATA_OBJECTS = 4;
+const MAX_INTERFACES   = 3;
+
+/** Renders one direction lane (either forward or reverse). */
+function DirectionSection({
+	bucket,
+	fromLabel,
+	toLabel,
+}: {
+	bucket: DirectionBucket;
+	fromLabel: string;
+	toLabel: string;
+}) {
+	const visibleDOs   = bucket.dataObjects.slice(0, MAX_DATA_OBJECTS);
+	const hiddenDOs    = bucket.dataObjects.length - visibleDOs.length;
+	const visibleIfcs  = bucket.interfaces.slice(0, MAX_INTERFACES);
+	const hiddenIfcs   = bucket.interfaces.length - visibleIfcs.length;
+
+	return (
+		<div className="mt-2 pt-2 border-t border-gray-700">
+			{/* Direction label */}
+			<div
+				className={`text-[10px] font-semibold uppercase tracking-wide ${
+					bucket.hasFlow ? "text-blue-300" : "text-gray-500"
+				}`}
+			>
+				{fromLabel} → {toLabel}
+			</div>
+
+			{!bucket.hasFlow ? (
+				<div className="text-gray-500 text-[10px] italic mt-1">No data flow</div>
+			) : (
+				<>
+					{/* Data objects */}
+					{bucket.dataObjects.length === 0 ? (
+						<div className="text-gray-500 text-[10px] italic mt-1">
+							No data objects recorded
+						</div>
+					) : (
+						<div className="mt-1">
+							<div className="text-gray-400 text-[10px] uppercase tracking-wide">
+								Data Objects
+							</div>
+							{visibleDOs.map((obj) => (
+								<div key={obj} className="text-yellow-300 ml-1 truncate max-w-[200px]">
+									• {obj}
+								</div>
+							))}
+							{hiddenDOs > 0 && (
+								<div className="text-gray-400 ml-1 text-[10px]">
+									+{hiddenDOs} more
+								</div>
+							)}
+						</div>
+					)}
+
+					{/* Per-interface records */}
+					{visibleIfcs.length > 0 && (
+						<div className="mt-1.5">
+							<div className="text-gray-400 text-[10px] uppercase tracking-wide">
+								Interfaces
+							</div>
+							{visibleIfcs.map((ifc, i) => (
+								<div key={i} className="mt-0.5">
+									<div className="text-gray-300 text-[10px] truncate max-w-[200px]">
+										{ifc.label || "Unnamed interface"}
+									</div>
+									{ifc.dataObjects.length > 0 && (
+										<div className="text-gray-500 text-[10px] ml-2 truncate max-w-[190px]">
+											↳ {ifc.dataObjects.slice(0, 3).join(", ")}
+											{ifc.dataObjects.length > 3 && ` +${ifc.dataObjects.length - 3}`}
+										</div>
+									)}
+								</div>
+							))}
+							{hiddenIfcs > 0 && (
+								<div className="text-gray-400 text-[10px] mt-0.5">
+									+{hiddenIfcs} more interface{hiddenIfcs !== 1 ? "s" : ""}
+								</div>
+							)}
+						</div>
+					)}
+				</>
+			)}
+		</div>
+	);
 }
 
 export const GraphTooltip = ({ tooltip }: GraphTooltipProps) => {
@@ -15,6 +120,7 @@ export const GraphTooltip = ({ tooltip }: GraphTooltipProps) => {
 			className="fixed z-50 pointer-events-none bg-gray-900 text-white text-xs rounded-md px-3 py-2 shadow-xl leading-relaxed max-w-xs"
 			style={{ left: tooltip.x, top: tooltip.y }}
 		>
+			{/* ── Node tooltip ──────────────────────────────────────────── */}
 			{tooltip.type === "node" && tooltip.node && (
 				<>
 					<div className="font-semibold text-sm">{tooltip.node.label}</div>
@@ -22,14 +128,10 @@ export const GraphTooltip = ({ tooltip }: GraphTooltipProps) => {
 						{tooltip.node.type}
 					</div>
 					{tooltip.node.fullName && (
-						<div className="text-gray-300 mt-1">
-							{tooltip.node.fullName}
-						</div>
+						<div className="text-gray-300 mt-1">{tooltip.node.fullName}</div>
 					)}
 					{tooltip.node.description && (
-						<div className="text-gray-400 mt-1 italic">
-							{tooltip.node.description}
-						</div>
+						<div className="text-gray-400 mt-1 italic">{tooltip.node.description}</div>
 					)}
 					{tooltip.node.connectionCount > 0 && (
 						<div className="text-blue-300 mt-1 font-mono">
@@ -38,78 +140,79 @@ export const GraphTooltip = ({ tooltip }: GraphTooltipProps) => {
 					)}
 				</>
 			)}
+
+			{/* ── Edge tooltip ──────────────────────────────────────────── */}
 			{tooltip.type === "edge" && tooltip.edge && (
 				<>
-					<div className="font-semibold">
-						{tooltip.sourceLabel}
-					</div>
-					<div className="text-gray-300">→ {tooltip.targetLabel}</div>
-					<div className="text-gray-400 text-[10px] uppercase tracking-wide mt-1">
-						{tooltip.edge.edgeType}
-					</div>
-					{tooltip.edge.dataObjects && tooltip.edge.dataObjects.length > 0 ? (
-						<div className="mt-1">
-							<div className="text-gray-400 text-[10px] uppercase tracking-wide">Data Objects</div>
-							{tooltip.edge.dataObjects.map((obj, i) => (
-								<div key={i} className="text-yellow-300 ml-1">• {obj}</div>
-							))}
-						</div>
-					) : (
-						<div className="mt-1">
-							<span className="text-gray-400">Data:</span>{" "}
-							<span className="text-yellow-300">{tooltip.edge.data || "N/A"}</span>
-						</div>
-					)}
-					<div>
-						<span className="text-gray-400">Format:</span>{" "}
-						{tooltip.edge.format || "N/A"}
-					</div>
-					<div>
-						<span className="text-gray-400">Protocol:</span>{" "}
-						{tooltip.edge.protocol || "N/A"}
-					</div>
-					<div>
-						<span className="text-gray-400">Frequency:</span>{" "}
-						{tooltip.edge.frequency || "N/A"}
-					</div>
-					<div className="text-gray-400 mt-1 italic text-[10px]">
-						{tooltip.edge.interfaceName || "N/A"}
-					</div>
-
-					{/* Reverse direction (bidirectional edges on V2 page only) */}
-					{tooltip.edge.bidirectional && tooltip.edge.reverseEdgeData && (
+					{tooltip.edge.forward ? (
+						// ── New canonical connection-edge path (System Network Map) ──
 						<>
-							<div className="border-t border-gray-600 mt-2 pt-2 text-gray-400 text-[10px] uppercase tracking-wide">
-								{tooltip.targetLabel} → {tooltip.sourceLabel}
+							<div className="font-semibold text-sm text-gray-200">Connection</div>
+							<div className="text-gray-400 text-[10px] mt-0.5">
+								{tooltip.sourceLabel} ↔ {tooltip.targetLabel}
 							</div>
-							{tooltip.edge.reverseEdgeData.dataObjects && tooltip.edge.reverseEdgeData.dataObjects.length > 0 ? (
+
+							<DirectionSection
+								bucket={tooltip.edge.forward}
+								fromLabel={tooltip.sourceLabel ?? ""}
+								toLabel={tooltip.targetLabel ?? ""}
+							/>
+
+							{tooltip.edge.reverse && (
+								<DirectionSection
+									bucket={tooltip.edge.reverse}
+									fromLabel={tooltip.targetLabel ?? ""}
+									toLabel={tooltip.sourceLabel ?? ""}
+								/>
+							)}
+						</>
+					) : (
+						// ── Legacy path (DataObject graph, NetworkPage) ─────────────
+						<>
+							<div className="font-semibold">{tooltip.sourceLabel}</div>
+							<div className="text-gray-300">→ {tooltip.targetLabel}</div>
+							<div className="text-gray-400 text-[10px] uppercase tracking-wide mt-1">
+								{tooltip.edge.edgeType}
+							</div>
+							{tooltip.edge.dataObjects && tooltip.edge.dataObjects.length > 0 ? (
 								<div className="mt-1">
-									<div className="text-gray-400 text-[10px] uppercase tracking-wide">Data Objects</div>
-									{tooltip.edge.reverseEdgeData.dataObjects.map((obj, i) => (
+									<div className="text-gray-400 text-[10px] uppercase tracking-wide">
+										Data Objects
+									</div>
+									{tooltip.edge.dataObjects.map((obj, i) => (
 										<div key={i} className="text-yellow-300 ml-1">• {obj}</div>
 									))}
 								</div>
 							) : (
 								<div className="mt-1">
 									<span className="text-gray-400">Data:</span>{" "}
-									<span className="text-yellow-300">{tooltip.edge.reverseEdgeData.data || "N/A"}</span>
+									<span className="text-yellow-300">{tooltip.edge.data || "N/A"}</span>
 								</div>
 							)}
 							<div>
 								<span className="text-gray-400">Format:</span>{" "}
-								{tooltip.edge.reverseEdgeData.format || "N/A"}
+								{tooltip.edge.format || "N/A"}
 							</div>
 							<div>
 								<span className="text-gray-400">Protocol:</span>{" "}
-								{tooltip.edge.reverseEdgeData.protocol || "N/A"}
+								{tooltip.edge.protocol || "N/A"}
 							</div>
 							<div>
 								<span className="text-gray-400">Frequency:</span>{" "}
-								{tooltip.edge.reverseEdgeData.frequency || "N/A"}
+								{tooltip.edge.frequency || "N/A"}
 							</div>
 							<div className="text-gray-400 mt-1 italic text-[10px]">
-								{tooltip.edge.reverseEdgeData.interfaceName || "N/A"}
+								{tooltip.edge.interfaceName || "N/A"}
 							</div>
+
+							{/* Reverse section for legacy merge path */}
+							{tooltip.edge.reverse?.hasFlow && (
+								<DirectionSection
+									bucket={tooltip.edge.reverse}
+									fromLabel={tooltip.targetLabel ?? ""}
+									toLabel={tooltip.sourceLabel ?? ""}
+								/>
+							)}
 						</>
 					)}
 				</>

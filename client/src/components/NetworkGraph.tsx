@@ -81,23 +81,42 @@ export const NetworkGraph = ({
 		nodeLabelMap.current = labelMap;
 
 		// Merge bidirectional edge pairs (A→B + B→A) into a single double-headed edge.
-		// Uses a canonical pair key so order doesn't matter. The first-seen edge is kept;
-		// its bidirectional flag is set to true when the reverse is found.
+		// This path is used by the legacy DataObject graph (NetworkPage). For the
+		// System Network Map, edges already arrive pre-merged with forward/reverse
+		// DirectionBuckets set — in that case this loop sees each edge only once and
+		// is effectively a no-op.
 		const pairKey = (a: string, b: string) => (a < b ? `${a}||${b}` : `${b}||${a}`);
 		let workingEdges: ProcessedEdge[];
 		if (mergeBidirectional) {
 			const seen = new Map<string, ProcessedEdge>();
 			const result: ProcessedEdge[] = [];
 			for (const edge of edges) {
-				// Per-data-object edges should never be merged
-				if (edge.noMerge) { result.push(edge); continue; }
+				// Per-data-object edges (noMerge flag) and already-merged connection
+				// edges (forward bucket present) bypass the merge loop entirely.
+				if (edge.noMerge || edge.forward) { result.push(edge); continue; }
 				const key = pairKey(edge.sourceId, edge.targetId);
 				if (seen.has(key)) {
 					const kept = seen.get(key)!;
 					kept.bidirectional = true;
-					// Store the reverse edge's metadata so the tooltip can show both directions.
-					// The kept edge's source→target is one direction; the dropped edge's source
-					// is the reverse direction (target→source from the kept edge's perspective).
+					// Populate reverse DirectionBucket from the dropped reverse edge.
+					kept.reverse = {
+						fromUri: edge.sourceId,
+						toUri: edge.targetId,
+						dataObjects: edge.dataObjects ?? [],
+						interfaces: [],
+						hasFlow: true,
+					};
+					// Ensure forward bucket exists on the kept edge.
+					if (!kept.forward) {
+						kept.forward = {
+							fromUri: kept.sourceId,
+							toUri: kept.targetId,
+							dataObjects: kept.dataObjects ?? [],
+							interfaces: [],
+							hasFlow: true,
+						};
+					}
+					// Legacy field retained for any code that still reads it.
 					kept.reverseEdgeData = {
 						edgeType: edge.edgeType,
 						data: edge.data,
@@ -108,7 +127,10 @@ export const NetworkGraph = ({
 						dataObjects: edge.dataObjects,
 					};
 				} else {
-					edge.bidirectional = false; // reset in case of re-init
+					// First time seeing this canonical pair — reset merge state.
+					// Do NOT touch bidirectional here: pre-merged edges set it in
+					// systemSubgraph and must not be overwritten.
+					if (edge.bidirectional === undefined) edge.bidirectional = false;
 					seen.set(key, edge);
 					result.push(edge);
 				}

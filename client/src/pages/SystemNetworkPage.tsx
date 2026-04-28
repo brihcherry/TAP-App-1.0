@@ -248,6 +248,24 @@ export const SystemNetworkPage = () => {
       </div>
     );
   }
+  Let me read the actual files to get the full content:
+  
+  Let me check the docs and any data files for hints about the capability group RDF structure:
+  
+  Now I have everything I need. Let me check the Java version in pom.xml quickly:
+  
+  Java 21, good. Now I have everything needed. The reactor needs to query CapabilityGroup nodes and group the associated systems. The pattern is consistent with how GetSystemDetailsReactor fetches BusinessProcesses/Activities via Supports — just inverted (grouped by capability group rather than by system).
+  
+  Created GetCapabilityGroupsReactor.java
+  
+  Created GetCapabilityGroupsReactor.java.
+  
+  What it does:
+  Queries for all CapabilityGroup RDF nodes, finds every System that has a Supports relation to them, and returns the result grouped by capability group — matching exactly what SystemInspectionPage.tsx expects:
+  
+  Pattern used: Same conventions as the rest of the reactor suite — individual {} blocks per triple pattern, LinkedHashMap to preserve ORDER BY order, same extractLabel() helper, PixelDataType.MAP return.
+  
+  
 
   // ── Render: List view ─────────────────────────────────────────────────────
   return (

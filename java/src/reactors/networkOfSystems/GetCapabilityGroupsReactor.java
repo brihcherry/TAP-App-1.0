@@ -16,10 +16,11 @@ import reactors.AbstractProjectReactor;
 import util.QueryExecutor;
 
 /**
- * Returns all CapabilityGroups and the Systems that support each one.
+ * Returns all capability groups from the TAP_Core_Data RDF database, each with the
+ * list of systems that support them.
  *
- * <p>Uses the {@code System_CapabilityGroup_Supports} relationship in the TAP ontology:
- * {@code System --Supports--> CapabilityGroup}.
+ * <p>Used to populate the zoomable bubble chart on the System Inspection page, where
+ * each bubble cluster represents a capability group and each inner bubble is a system.
  *
  * <p>Pixel call:
  * <pre>
@@ -31,10 +32,10 @@ import util.QueryExecutor;
  *   {
  *     "capabilityGroups": [
  *       {
- *         "uri": "http://health.mil/.../CapabilityGroup/Patient_Administration",
- *         "label": "Patient Administration",
+ *         "uri": "http://semoss.org/ontologies/Concept/CapabilityGroup/Personnel_Services",
+ *         "label": "Personnel Services",
  *         "systems": [
- *           {"uri": "http://health.mil/.../System/AHLTA", "label": "AHLTA"},
+ *           {"uri": "http://health.mil/ontologies/Concept/System/AHLTA", "label": "AHLTA"},
  *           ...
  *         ]
  *       },
@@ -67,35 +68,36 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
 
     QueryExecutor executor = new QueryExecutor(engineId);
 
-    // Query all System → Supports → CapabilityGroup pairs
+    // Fetch all (CapabilityGroup, System) pairs where the system supports the group.
+    // Each triple pattern is wrapped in its own {} group to match the SPARQL conventions
+    // used by the other working queries on this engine.
     String query =
-        "SELECT DISTINCT ?System ?CapabilityGroup WHERE {"
-        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
+        "SELECT DISTINCT ?CapabilityGroup ?System WHERE {"
         + "{?CapabilityGroup <" + RDF_TYPE + "> <" + BASE + "/Concept/CapabilityGroup>}"
+        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?System <" + BASE + "/Relation/Supports> ?CapabilityGroup}"
         + "} ORDER BY ?CapabilityGroup ?System";
 
     List<Map<String, String>> rows = executor.executeSelect(query);
 
-    // Group systems by capability group (preserve insertion order)
+    // Group systems under their capability group URI; LinkedHashMap preserves ORDER BY order.
     Map<String, Map<String, Object>> groupMap = new LinkedHashMap<>();
-
     for (Map<String, String> row : rows) {
-      String sysUri = row.get("System");
       String cgUri = row.get("CapabilityGroup");
-      if (sysUri == null || cgUri == null) continue;
+      String sysUri = row.get("System");
+      if (cgUri == null || sysUri == null) continue;
 
-      Map<String, Object> group = groupMap.get(cgUri);
-      if (group == null) {
-        group = new HashMap<>();
-        group.put("uri", cgUri);
-        group.put("label", extractLabel(cgUri));
+      groupMap.computeIfAbsent(cgUri, uri -> {
+        Map<String, Object> group = new HashMap<>();
+        group.put("uri", uri);
+        group.put("label", extractLabel(uri));
         group.put("systems", new ArrayList<Map<String, String>>());
-        groupMap.put(cgUri, group);
-      }
+        return group;
+      });
 
       @SuppressWarnings("unchecked")
-      List<Map<String, String>> systems = (List<Map<String, String>>) group.get("systems");
+      List<Map<String, String>> systems =
+          (List<Map<String, String>>) groupMap.get(cgUri).get("systems");
       Map<String, String> sysEntry = new HashMap<>();
       sysEntry.put("uri", sysUri);
       sysEntry.put("label", extractLabel(sysUri));
@@ -107,8 +109,7 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
     Map<String, Object> result = new HashMap<>();
     result.put("capabilityGroups", capabilityGroups);
 
-    LOGGER.info("GetCapabilityGroups: " + capabilityGroups.size() + " groups, "
-        + rows.size() + " system-group pairs");
+    LOGGER.info("GetCapabilityGroups: found " + capabilityGroups.size() + " groups");
     return new NounMetadata(result, PixelDataType.MAP);
   }
 
@@ -120,8 +121,8 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
 
   @Override
   public String getReactorDescription() {
-    return "Returns all CapabilityGroups with their associated Systems. "
-        + "Uses the System_CapabilityGroup_Supports relationship.";
+    return "Returns all capability groups from the RDF database, each with the systems that "
+        + "support them. Used to populate the bubble chart on the System Inspection page.";
   }
 
   @Override

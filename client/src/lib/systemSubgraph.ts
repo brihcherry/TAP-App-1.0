@@ -226,6 +226,15 @@ function maxDegreeFromAdj(
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
+ * Returns a map of system URI → number of directly connected system neighbors.
+ * This is what the list-view connection count badge should display.
+ */
+export function computeDirectNeighborCounts(raw: RawNetworkData): Map<string, number> {
+	const { adjacency } = buildSystemGraph(raw);
+	return new Map([...adjacency.entries()].map(([uri, neighbors]) => [uri, neighbors.size]));
+}
+
+/**
  * Compute the maximum system-hop degree reachable from a system.
  */
 export function computeMaxDegree(raw: RawNetworkData, systemUri: string): number {

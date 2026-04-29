@@ -41,17 +41,22 @@ interface CapabilityBubbleGraphProps {
 	capabilityGroups: CapabilityGroup[];
 	onSystemClick: (systemUri: string, systemLabel: string) => void;
 	selectedSystemUri?: string | null;
+	/** Called when a capability group bubble is zoomed into, or null when zooming back out. */
+	onGroupFocus?: (group: { uri: string; label: string } | null) => void;
 }
 
 export const CapabilityBubbleGraph = ({
 	capabilityGroups,
 	onSystemClick,
 	selectedSystemUri,
+	onGroupFocus,
 }: CapabilityBubbleGraphProps) => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
 	const selectedUriRef = useRef(selectedSystemUri);
 	selectedUriRef.current = selectedSystemUri;
+	const onGroupFocusRef = useRef(onGroupFocus);
+	onGroupFocusRef.current = onGroupFocus;
 
 	// Track container dimensions so D3 re-renders on resize
 	const [dims, setDims] = useState({ w: 0, h: 0 });
@@ -200,6 +205,7 @@ export const CapabilityBubbleGraph = ({
 					}
 				} else if (d.data.type === "group" && focus !== d) {
 					zoomTo(d);
+					onGroupFocusRef.current?.({ uri: d.data.uri!, label: d.data.name });
 				}
 			})
 			.on("mouseenter", function (_, d) {
@@ -284,7 +290,10 @@ export const CapabilityBubbleGraph = ({
 			.text((d) => d.data.name);
 
 		// Click background → zoom out
-		svg.on("click", () => zoomTo(packedRoot));
+		svg.on("click", () => {
+			zoomTo(packedRoot);
+			onGroupFocusRef.current?.(null);
+		});
 
 		// ── Zoom helpers ─────────────────────────────────────────────────────
 		function zoomView(v: [number, number, number]) {

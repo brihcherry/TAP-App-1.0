@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from "react";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
 import { CapabilityBubbleGraph } from "@/components/CapabilityBubbleGraph";
+import { CapabilityGroupSidebar } from "@/components/CapabilityGroupSidebar";
 import { SystemInspectionPanel } from "@/components/SystemInspectionPanel";
 import type { CapabilityGroup, CapabilityGroupsResponse, SystemDetails } from "@/types/system";
 
@@ -18,6 +19,9 @@ export const SystemInspectionPage = () => {
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  // ── Selected capability group state (zoomed in) ─────────────────────────
+  const [selectedGroup, setSelectedGroup] = useState<CapabilityGroup | null>(null);
 
   // ── Selected system state ─────────────────────────────────────────────────
   const [selectedSystem, setSelectedSystem] = useState<{ uri: string; label: string } | null>(null);
@@ -102,6 +106,19 @@ export const SystemInspectionPage = () => {
     setSelectedSystem({ uri: systemUri, label: systemLabel });
   }, []);
 
+  const handleGroupFocus = useCallback((focused: { uri: string; label: string } | null) => {
+    if (!focused) {
+      setSelectedGroup(null);
+      return;
+    }
+    const group = capabilityGroups.find((cg) => cg.uri === focused.uri) ?? null;
+    setSelectedGroup(group);
+  }, [capabilityGroups]);
+
+  const handleCloseGroupSidebar = useCallback(() => {
+    setSelectedGroup(null);
+  }, []);
+
   const handleClosePanel = useCallback(() => {
     setSelectedSystem(null);
     setDetails(null);
@@ -174,8 +191,17 @@ export const SystemInspectionPage = () => {
               capabilityGroups={capabilityGroups}
               onSystemClick={handleSystemClick}
               selectedSystemUri={selectedSystem?.uri}
+              onGroupFocus={handleGroupFocus}
             />
           </div>
+        )}
+
+        {/* Capability group sidebar — shown when a group is zoomed in and no system is selected */}
+        {selectedGroup && !selectedSystem && (
+          <CapabilityGroupSidebar
+            group={selectedGroup}
+            onClose={handleCloseGroupSidebar}
+          />
         )}
 
         {/* System inspection slide-over panel */}

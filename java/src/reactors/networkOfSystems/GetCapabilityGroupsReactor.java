@@ -12,6 +12,7 @@ import org.apache.logging.log4j.Logger;
 import prerna.sablecc2.om.PixelDataType;
 import prerna.sablecc2.om.nounmeta.NounMetadata;
 import reactors.AbstractProjectReactor;
+import util.ProjectProperties;
 import util.QueryExecutor;
 
 /**

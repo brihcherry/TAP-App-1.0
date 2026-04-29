@@ -12,6 +12,7 @@ import { createHashRouter, Navigate, RouterProvider } from "react-router-dom";
 import { ErrorPage } from "./ErrorPage";
 import { HomePage } from "./HomePage";
 import { SystemNetworkPage } from "./SystemNetworkPage";
+import { RemovalImpactPage } from "./RemovalImpactPage";
 import { InitializedLayout } from "./layouts";
 
 const router = createHashRouter([
@@ -27,6 +28,10 @@ const router = createHashRouter([
 			{
 				path: '/system-network',
 				Component: SystemNetworkPage,
+			},
+			{
+				path: '/removal-impact',
+				Component: RemovalImpactPage,
 			},
 			{
 				// Catch-all: redirect unknown routes to home

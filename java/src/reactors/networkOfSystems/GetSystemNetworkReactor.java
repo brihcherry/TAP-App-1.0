@@ -91,6 +91,7 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
         + "{?System <" + BASE + "/Relation/Provide> ?Interface}"
         + "{?Interface <" + BASE + "/Relation/Payload> ?anyData}"
+        + "{?System <" + BASE + "/Relation/Supports> ?anyCapGroup}"
         + "} ORDER BY ?System";
 
     for (Map<String, String> row : executor.executeSelect(provideQuery)) {
@@ -114,6 +115,7 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
         + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?Interface <" + BASE + "/Relation/Consume> ?System}"
         + "{?Interface <" + BASE + "/Relation/Payload> ?anyData}"
+        + "{?System <" + BASE + "/Relation/Supports> ?anyCapGroup}"
         + "} ORDER BY ?Interface";
 
     for (Map<String, String> row : executor.executeSelect(consumeQuery)) {

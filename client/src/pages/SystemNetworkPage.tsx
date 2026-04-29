@@ -12,7 +12,7 @@ import { NetworkGraph } from "@/components/NetworkGraph";
 import { GraphTooltip } from "@/components/GraphTooltip";
 import { GraphLegend } from "@/components/GraphLegend";
 import { SystemGraphSidebar } from "@/components/SystemGraphSidebar";
-import { computeSubgraph, canonicalPairKey, type RawNetworkData } from "@/lib/systemSubgraph";
+import { computeSubgraph, computeDirectNeighborCounts, canonicalPairKey, type RawNetworkData } from "@/lib/systemSubgraph";
 import type { TooltipData } from "@/types/graph";
 
 const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
@@ -31,11 +31,7 @@ interface NetworkEntry {
 }
 
 function buildEntries(raw: RawNetworkData): NetworkEntry[] {
-  const counts = new Map<string, number>();
-  for (const e of raw.edges) {
-    counts.set(e.sourceUri, (counts.get(e.sourceUri) ?? 0) + 1);
-    counts.set(e.targetUri, (counts.get(e.targetUri) ?? 0) + 1);
-  }
+  const counts = computeDirectNeighborCounts(raw);
 
   return raw.nodes
     .filter((n) => n.type === "System")
@@ -324,7 +320,10 @@ export const SystemNetworkPage = () => {
                       </span>
 
                       {/* Connection count badge */}
-                      <span className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 group-hover:bg-blue-100 group-hover:text-blue-700">
+                      <span
+                        title={`${entry.connectionCount} direct system connection${entry.connectionCount !== 1 ? "s" : ""}`}
+                        className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 group-hover:bg-blue-100 group-hover:text-blue-700"
+                      >
                         {entry.connectionCount}
                       </span>
                     </button>

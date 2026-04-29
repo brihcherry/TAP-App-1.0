@@ -23,8 +23,7 @@ public class ProjectProperties {
 
   private static ProjectProperties INSTANCE = null;
 
-  // TODO: Add a field for each property you want to expose, e.g.:
-  //   private String engineId;
+  private String databaseId;
 
   private ProjectProperties() {}
 
@@ -58,6 +57,7 @@ public class ProjectProperties {
 
       // TODO: Read properties and assign to fields, e.g.:
       //   newInstance.engineId = projectProperties.getProperty("engineId");
+      newInstance.databaseId = projectProperties.getProperty("databaseId");
 
       INSTANCE = newInstance;
     } catch (IOException e) {
@@ -68,5 +68,6 @@ public class ProjectProperties {
 
   // TODO: Add getters for each property, e.g.:
   //   public String getEngineId() { return engineId; }
+  public String getDatabaseId() { return databaseId; }
 
 }

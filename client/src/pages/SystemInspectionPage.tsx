@@ -11,8 +11,6 @@ import { CapabilityBubbleGraph } from "@/components/CapabilityBubbleGraph";
 import { SystemInspectionPanel } from "@/components/SystemInspectionPanel";
 import type { CapabilityGroup, CapabilityGroupsResponse, SystemDetails } from "@/types/system";
 
-const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
-
 export const SystemInspectionPage = () => {
   const { insightId } = useInsight();
 
@@ -35,7 +33,7 @@ export const SystemInspectionPage = () => {
     setIsLoading(true);
     setLoadError(null);
 
-    runPixel(`GetCapabilityGroups(database=["${DATABASE_ID}"]);`, insightId)
+    runPixel(`GetCapabilityGroups();`, insightId)
       .then((response) => {
         if (cancelled) return;
         if (response.errors.length > 0) {
@@ -70,7 +68,7 @@ export const SystemInspectionPage = () => {
     setDetailsError(null);
     setDetails(null);
 
-    const pixel = `GetSystemDetails(database=["${DATABASE_ID}"], system=["${selectedSystem.uri}"]);`;
+    const pixel = `GetSystemDetails(system=["${selectedSystem.uri}"]);`;
 
     runPixel(pixel, insightId)
       .then((response) => {
@@ -214,7 +212,7 @@ export const SystemInspectionPage = () => {
               )}
 
               {details && !isLoadingDetails && (
-                <SystemInspectionPanel details={details} databaseId={DATABASE_ID} />
+                <SystemInspectionPanel details={details} />
               )}
             </div>
           </div>

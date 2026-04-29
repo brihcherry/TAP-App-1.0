@@ -20,10 +20,9 @@ interface ConceptSearchResult {
 
 interface SystemInspectionPanelProps {
   details: SystemDetails;
-  databaseId: string;
 }
 
-export const SystemInspectionPanel = ({ details, databaseId }: SystemInspectionPanelProps) => {
+export const SystemInspectionPanel = ({ details }: SystemInspectionPanelProps) => {
   const { insightId } = useInsight();
 
   const tabs: Tab[] = [
@@ -60,7 +59,7 @@ export const SystemInspectionPanel = ({ details, databaseId }: SystemInspectionP
       setConceptLoading(true);
 
       runPixel(
-        `GetSystemsByConcept(database=["${databaseId}"], concept=["${item.uri}"]);`,
+        `GetSystemsByConcept(concept=["${item.uri}"]);`,
         insightId,
       )
         .then((response) => {

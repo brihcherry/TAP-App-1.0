@@ -12,7 +12,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import prerna.sablecc2.om.PixelDataType;
-import prerna.sablecc2.om.ReactorKeysEnum;
 import prerna.sablecc2.om.nounmeta.NounMetadata;
 import reactors.AbstractProjectReactor;
 import util.QueryExecutor;
@@ -57,22 +56,20 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
 
   private static final Logger LOGGER = LogManager.getLogger(GetSystemNetworkReactor.class);
 
-  private static final String DATABASE_KEY = ReactorKeysEnum.DATABASE.getKey();
-
   private static final String RDF_TYPE =
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
   private static final String BASE =
       "http://semoss.org/ontologies";
 
   public GetSystemNetworkReactor() {
-    this.keysToGet = new String[] { DATABASE_KEY };
-    this.keyRequired = new int[] { 1 };
+    this.keysToGet = new String[] {};
+    this.keyRequired = new int[] {};
   }
 
   @Override
   protected NounMetadata doExecute() {
     organizeKeys();
-    String engineId = this.keyValue.get(DATABASE_KEY);
+    String engineId = ProjectProperties.getInstance().getDatabaseId();
     LOGGER.info("GetSystemNetwork: engine=" + engineId);
 
     QueryExecutor executor = new QueryExecutor(engineId);
@@ -203,9 +200,6 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
 
   @Override
   public String getDescriptionForKey(String key) {
-    if (DATABASE_KEY.equals(key)) {
-      return "The UUID of the RDF database engine to query.";
-    }
     return null;
   }
 }

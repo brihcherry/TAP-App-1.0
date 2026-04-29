@@ -15,8 +15,6 @@ import { SystemGraphSidebar } from "@/components/SystemGraphSidebar";
 import { computeSubgraph, computeDirectNeighborCounts, canonicalPairKey, type RawNetworkData } from "@/lib/systemSubgraph";
 import type { TooltipData } from "@/types/graph";
 
-const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
-
 const TYPE_COLORS: Record<string, string> = {
   System: "rgb(31, 119, 180)",
 };
@@ -73,7 +71,7 @@ export const SystemNetworkPage = () => {
     setIsLoading(true);
     setError(null);
 
-    runPixel(`GetSystemNetwork(database=["${DATABASE_ID}"]);`, insightId)
+    runPixel(`GetSystemNetwork();`, insightId)
       .then((response) => {
         if (cancelled) return;
         if (response.errors.length > 0) {

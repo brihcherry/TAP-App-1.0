@@ -25,19 +25,20 @@ const DEFAULT_WIDTH = 288; // w-72
 interface ConceptEntry {
 	uri: string;
 	label: string;
-	kind: "BP" | "Activity";
+	kind: "BP" | "Activity" | "DataObject";
 	supportingSystemUris: string[];
 }
 
 interface UniqueContribution {
 	systemUri: string;
 	systemLabel: string;
-	items: { uri: string; label: string; kind: "BP" | "Activity" }[];
+	items: { uri: string; label: string; kind: "BP" | "Activity" | "DataObject" }[];
 }
 
 interface OverlapAnalysis {
 	totalBPs: number;
 	totalActivities: number;
+	totalDataObjects: number;
 	uniqueContributions: UniqueContribution[];
 	sharedItems: (ConceptEntry & { coverageCount: number })[];
 }
@@ -74,11 +75,25 @@ function computeOverlap(allDetails: SystemDetails[]): OverlapAnalysis {
 				});
 			}
 		}
+		for (const dobj of details.dataObjects) {
+			const existing = conceptMap.get(dobj.uri);
+			if (existing) {
+				existing.supportingSystemUris.push(details.systemUri);
+			} else {
+				conceptMap.set(dobj.uri, {
+					uri: dobj.uri,
+					label: dobj.label,
+					kind: "DataObject",
+					supportingSystemUris: [details.systemUri],
+				});
+			}
+		}
 	}
 
 	const allConcepts = Array.from(conceptMap.values());
 	const totalBPs = allConcepts.filter((c) => c.kind === "BP").length;
 	const totalActivities = allConcepts.filter((c) => c.kind === "Activity").length;
+	const totalDataObjects = allConcepts.filter((c) => c.kind === "DataObject").length;
 
 	// Unique: covered by exactly one system — group by that system
 	const bySystem = new Map<string, UniqueContribution>();
@@ -112,20 +127,22 @@ function computeOverlap(allDetails: SystemDetails[]): OverlapAnalysis {
 				a.coverageCount - b.coverageCount || a.label.localeCompare(b.label)
 		);
 
-	return { totalBPs, totalActivities, uniqueContributions, sharedItems };
+	return { totalBPs, totalActivities, totalDataObjects, uniqueContributions, sharedItems };
 }
 
 // ── Kind badge ────────────────────────────────────────────────────────────────
 
-const KindBadge = ({ kind }: { kind: "BP" | "Activity" }) => (
+const KIND_STYLES: Record<"BP" | "Activity" | "DataObject", { className: string; label: string }> = {
+	BP: { className: "bg-blue-100 text-blue-700", label: "BP" },
+	Activity: { className: "bg-purple-100 text-purple-700", label: "Act" },
+	DataObject: { className: "bg-teal-100 text-teal-700", label: "Data" },
+};
+
+const KindBadge = ({ kind }: { kind: "BP" | "Activity" | "DataObject" }) => (
 	<span
-		className={`mt-0.5 shrink-0 rounded px-1 py-0.5 text-[9px] font-bold leading-none uppercase ${
-			kind === "BP"
-				? "bg-blue-100 text-blue-700"
-				: "bg-purple-100 text-purple-700"
-		}`}
+		className={`mt-0.5 shrink-0 rounded px-1 py-0.5 text-[9px] font-bold leading-none uppercase ${KIND_STYLES[kind].className}`}
 	>
-		{kind === "BP" ? "BP" : "Act"}
+		{KIND_STYLES[kind].label}
 	</span>
 );
 
@@ -174,6 +191,17 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [uniqueExpanded, setUniqueExpanded] = useState(true);
 	const [sharedExpanded, setSharedExpanded] = useState(false);
+	// Set of system URIs whose item list is expanded (empty = all collapsed)
+	const [expandedSystems, setExpandedSystems] = useState<Set<string>>(new Set());
+
+	const toggleSystem = useCallback((uri: string) => {
+		setExpandedSystems((prev) => {
+			const next = new Set(prev);
+			if (next.has(uri)) next.delete(uri);
+			else next.add(uri);
+			return next;
+		});
+	}, []);
 
 	// ── Drag-to-resize ────────────────────────────────────────────────────────
 	const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -221,6 +249,7 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 		setAllDetails([]);
 		setSharedExpanded(false);
 		setUniqueExpanded(true);
+		setExpandedSystems(new Set());
 
 		const fetches = group.systems.map((sys) =>
 			runPixel(`GetSystemDetails(system=["${sys.uri}"]);`, insightId).then(
@@ -314,84 +343,115 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 						<span>
 							<strong className="text-gray-800">{analysis.totalActivities}</strong> activities
 						</span>
+						<span>
+							<strong className="text-gray-800">{analysis.totalDataObjects}</strong> data objects
+						</span>
 					</div>
 
-					{/* ── Zone 1: Unique Contributions ────────────────────── */}
-					<div className="border-b border-gray-100">
-						<SectionHeader
-							label="Unique Contributions"
-							count={analysis.uniqueContributions.length}
-							expanded={uniqueExpanded}
-							onToggle={() => setUniqueExpanded((v) => !v)}
-							className="bg-amber-50 text-amber-700"
-						/>
-
-						{uniqueExpanded && (
-							analysis.uniqueContributions.length === 0 ? (
-								<div className="flex items-center gap-2 bg-emerald-50/60 px-4 py-4 text-xs text-emerald-700">
-									<span className="text-emerald-500">✓</span>
-									No uniquely owned capabilities — good coverage
-								</div>
-							) : (
-								<ul className="divide-y divide-gray-50">
-									{analysis.uniqueContributions.map((contrib) => (
-										<li key={contrib.systemUri} className="px-4 py-3">
-											<p className="mb-1.5 text-xs font-semibold text-gray-800">
-												{contrib.systemLabel}
-											</p>
-											<ul className="space-y-1.5">
-												{contrib.items.map((item) => (
-													<li
-														key={item.uri}
-														className="flex items-start gap-2 text-xs text-gray-600"
-													>
-														<KindBadge kind={item.kind} />
-														<span>{item.label}</span>
-													</li>
-												))}
-											</ul>
-										</li>
-									))}
-								</ul>
-							)
-						)}
-					</div>
-
-					{/* ── Zone 2: Shared Capabilities ─────────────────────── */}
-					<div>
-						<SectionHeader
-							label="Shared Capabilities"
-							count={analysis.sharedItems.length}
-							expanded={sharedExpanded}
-							onToggle={() => setSharedExpanded((v) => !v)}
-							className="hover:bg-gray-50 text-gray-600"
-						/>
-
-						{sharedExpanded && (
-							<ul className="divide-y divide-gray-50 border-t border-gray-100">
-								{analysis.sharedItems.length === 0 ? (
-									<li className="px-4 py-3 text-xs italic text-gray-400">
-										None
-									</li>
-								) : (
-									analysis.sharedItems.map((item) => (
-										<li
-											key={item.uri}
-											className="flex items-start gap-2 px-4 py-2.5 text-xs text-gray-600"
-										>
-											<KindBadge kind={item.kind} />
-											<span className="flex-1">{item.label}</span>
-											<span className="shrink-0 text-gray-400">
-												{item.coverageCount}/{group.systems.length}
-											</span>
-										</li>
-									))
-								)}
-							</ul>
-						)}
-					</div>
+				{/* Badge key */}
+				<div className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
+					<span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Key:</span>
+					{(["BP", "Activity", "DataObject"] as const).map((k) => (
+						<span key={k} className="flex items-center gap-1">
+							<KindBadge kind={k} />
+							<span>{k === "BP" ? "Business Process" : k === "Activity" ? "Activity" : "Data Object"}</span>
+						</span>
+					))}
 				</div>
-			)}
+
+				{/* ── Zone 1: Unique Contributions ────────────────────── */}
+				<div className="border-b border-gray-100">
+					<SectionHeader
+						label="Unique Contributions"
+						count={analysis.uniqueContributions.length}
+						expanded={uniqueExpanded}
+						onToggle={() => setUniqueExpanded((v) => !v)}
+						className="bg-amber-50 text-amber-700"
+					/>
+
+					{uniqueExpanded && (
+						analysis.uniqueContributions.length === 0 ? (
+							<div className="flex items-center gap-2 bg-emerald-50/60 px-4 py-4 text-xs text-emerald-700">
+								<span className="text-emerald-500">✓</span>
+								No uniquely owned capabilities — good coverage
+							</div>
+						) : (
+							<ul className="divide-y divide-gray-50">
+								{analysis.uniqueContributions.map((contrib) => {
+									const open = expandedSystems.has(contrib.systemUri);
+									return (
+										<li key={contrib.systemUri}>
+											<button
+												type="button"
+												onClick={() => toggleSystem(contrib.systemUri)}
+												className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+											>
+												{open ? (
+													<ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
+												) : (
+													<ChevronRight className="h-3 w-3 shrink-0 text-gray-400" />
+												)}
+												<span className="flex-1 text-xs font-semibold text-gray-800">
+													{contrib.systemLabel}
+												</span>
+												<span className="text-xs text-gray-400">{contrib.items.length}</span>
+											</button>
+											{open && (
+												<ul className="space-y-1.5 border-t border-gray-50 px-4 pb-3 pt-2">
+													{contrib.items.map((item) => (
+														<li
+															key={item.uri}
+															className="flex items-start gap-2 text-xs text-gray-600"
+														>
+															<KindBadge kind={item.kind} />
+															<span>{item.label}</span>
+														</li>
+													))}
+												</ul>
+											)}
+										</li>
+									);
+								})}
+							</ul>
+						)
+					)}
+				</div>
+
+				{/* ── Zone 2: Shared Capabilities ─────────────────────── */}
+				<div>
+					<SectionHeader
+						label="Shared Capabilities"
+						count={analysis.sharedItems.length}
+						expanded={sharedExpanded}
+						onToggle={() => setSharedExpanded((v) => !v)}
+						className="hover:bg-gray-50 text-gray-600"
+					/>
+
+					{sharedExpanded && (
+						<ul className="divide-y divide-gray-50 border-t border-gray-100">
+							{analysis.sharedItems.length === 0 ? (
+								<li className="px-4 py-3 text-xs italic text-gray-400">
+									None
+								</li>
+							) : (
+								analysis.sharedItems.map((item) => (
+									<li
+										key={item.uri}
+										className="flex items-start gap-2 px-4 py-2.5 text-xs text-gray-600"
+									>
+										<KindBadge kind={item.kind} />
+										<span className="flex-1">{item.label}</span>
+										<span className="shrink-0 text-gray-400">
+											{item.coverageCount}/{group.systems.length}
+										</span>
+									</li>
+								))
+							)}
+						</ul>
+					)}
+				</div>
+			</div>
+		)}
 		</aside>
 	);
 };

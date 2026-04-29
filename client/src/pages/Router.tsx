@@ -15,6 +15,7 @@ import { HomePage } from "./HomePage";
 import { NetworkStraightPage } from "./NetworkStraightPage";
 import { NetworkPage } from "./NetworkPage";
 import { SystemNetworkPage } from "./SystemNetworkPage";
+import { RemovalImpactPage } from "./RemovalImpactPage";
 import { InitializedLayout } from "./layouts";
 
 const router = createHashRouter([
@@ -38,6 +39,10 @@ const router = createHashRouter([
 			{
 				path: '/system-network',
 				Component: SystemNetworkPage,
+			},
+			{
+				path: '/removal-impact',
+				Component: RemovalImpactPage,
 			},
 			{
 				path: '/debug-comparison',

@@ -5,6 +5,7 @@ const navigationLinks: { path: string; text: string }[] = [
 	{ path: "/", text: "System Inspector" },
 	{ path: "/network", text: "Network of Systems" },
 	{ path: "/system-network", text: "System Network Map" },
+	{ path: "/removal-impact", text: "Removal Impact" },
 ];
 
 export const MainNavigation = () => {

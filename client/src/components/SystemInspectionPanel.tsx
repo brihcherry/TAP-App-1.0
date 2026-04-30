@@ -79,7 +79,7 @@ export const SystemInspectionPanel = ({ details }: SystemInspectionPanelProps) =
         })
         .finally(() => setConceptLoading(false));
     },
-    [insightId, databaseId, selectedConcept],
+    [insightId, selectedConcept],
   );
 
   const handleTabChange = (tabId: string) => {

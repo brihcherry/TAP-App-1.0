@@ -192,6 +192,7 @@ export const SystemInspectionPage = () => {
               onSystemClick={handleSystemClick}
               selectedSystemUri={selectedSystem?.uri}
               onGroupFocus={handleGroupFocus}
+              focusedGroupUri={selectedGroup?.uri ?? null}
             />
           </div>
         )}

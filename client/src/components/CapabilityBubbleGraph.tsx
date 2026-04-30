@@ -43,6 +43,8 @@ interface CapabilityBubbleGraphProps {
 	selectedSystemUri?: string | null;
 	/** Called when a capability group bubble is zoomed into, or null when zooming back out. */
 	onGroupFocus?: (group: { uri: string; label: string } | null) => void;
+	/** URI of the group that should remain zoomed after a D3 rebuild (e.g. sidebar resize). */
+	focusedGroupUri?: string | null;
 }
 
 export const CapabilityBubbleGraph = ({
@@ -50,6 +52,7 @@ export const CapabilityBubbleGraph = ({
 	onSystemClick,
 	selectedSystemUri,
 	onGroupFocus,
+	focusedGroupUri,
 }: CapabilityBubbleGraphProps) => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
@@ -352,11 +355,19 @@ export const CapabilityBubbleGraph = ({
 				});
 		}
 
-		// Initial render
-		zoomView([packedRoot.x, packedRoot.y, packedRoot.r * 2]);
+		// Initial render — restore zoom if a group was previously focused
+		const initialGroup = focusedGroupUri
+			? groupNodes.find((n) => n.data.uri === focusedGroupUri)
+			: undefined;
+		if (initialGroup) {
+			focus = initialGroup;
+			zoomView([initialGroup.x, initialGroup.y, initialGroup.r * 2]);
+		} else {
+			zoomView([packedRoot.x, packedRoot.y, packedRoot.r * 2]);
+		}
 
 		return () => { svg.interrupt(); };
-	}, [capabilityGroups, buildHierarchy, onSystemClick, dims]);
+	}, [capabilityGroups, buildHierarchy, onSystemClick, focusedGroupUri, dims]);
 
 	// ── Selection highlighting (separate — avoids full D3 rebuild) ────────────
 	useEffect(() => {

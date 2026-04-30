@@ -8,7 +8,8 @@
 //   - GetSystemNetwork (once on mount) — raw tripartite graph for downstream detection
 //   - GetSystemRemovalImpact (per selection) — provider counts + capability coverage
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
 import { ArrowLeft, AlertTriangle, AlertCircle, Info, ChevronDown, ChevronRight } from "lucide-react";
@@ -71,6 +72,15 @@ function buildSystemList(raw: RawNetworkData): SystemEntry[] {
 
 export const RemovalImpactPage = () => {
   const { insightId } = useInsight();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // When navigated here from the sidebar, location.state carries { systemUri, systemLabel }
+  const fromSidebar = useRef<{ systemUri: string; systemLabel: string } | null>(
+    (location.state as { systemUri?: string; systemLabel?: string } | null)
+      ?.systemUri
+      ? (location.state as { systemUri: string; systemLabel: string })
+      : null
+  );
 
   // ── Network data (loaded once) ────────────────────────────────────────────
   const [rawData, setRawData] = useState<RawNetworkData | null>(null);
@@ -106,7 +116,15 @@ export const RemovalImpactPage = () => {
         const output = response.pixelReturn[0]?.output as RawNetworkData;
         if (output?.nodes && output?.edges) {
           setRawData(output);
-          setSystems(buildSystemList(output));
+          const list = buildSystemList(output);
+          setSystems(list);
+          // Auto-select if we arrived here from the sidebar
+          if (fromSidebar.current) {
+            const { systemUri, systemLabel } = fromSidebar.current;
+            const match = list.find((s) => s.uri === systemUri);
+            setSelectedSystem(match ?? { uri: systemUri, label: systemLabel, connectionCount: 0 });
+            fromSidebar.current = null;
+          }
         } else {
           setNetworkError("Unexpected response format from server.");
         }
@@ -173,11 +191,16 @@ export const RemovalImpactPage = () => {
   }, []);
 
   const handleBack = useCallback(() => {
+    // If we came from the sidebar, go back in history so the bubble graph is restored
+    if (location.state && (location.state as { systemUri?: string }).systemUri) {
+      navigate(-1);
+      return;
+    }
     setSelectedSystem(null);
     setImpactResult(null);
     setAnalysisError(null);
     setMediumExpanded(false);
-  }, []);
+  }, [location.state, navigate]);
 
   // ── Render: Analysis view ─────────────────────────────────────────────────
   if (selectedSystem) {

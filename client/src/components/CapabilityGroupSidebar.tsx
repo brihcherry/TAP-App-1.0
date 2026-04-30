@@ -1,178 +1,23 @@
 // CapabilityGroupSidebar.tsx — Diagnostic sidebar shown when a capability
 // group bubble is zoomed into on the System Inspection page.
 //
-// Fetches SystemDetails for every system in the group in parallel, then
-// computes a coverage analysis:
-//   - Zone 1 (Unique Contributions): BPs/Activities owned by exactly 1 system
-//   - Zone 2 (Shared Capabilities): BPs/Activities covered by 2+ systems
-//
-// Both zones are collapsible. The sidebar width is draggable via a left-edge handle.
+// Analysis logic lives in @/lib/groupOverlap.
+// Kind badge UI lives in ./KindBadge.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { CapabilityGroup, SystemDetails } from "@/types/system";
+import { computeOverlap } from "@/lib/groupOverlap";
+import { KindBadge } from "./KindBadge";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 288; // w-72
-
-// ── Analysis types ────────────────────────────────────────────────────────────
-
-interface ConceptEntry {
-	uri: string;
-	label: string;
-	kind: "BP" | "Activity" | "DataObject";
-	supportingSystemUris: string[];
-}
-
-interface UniqueContribution {
-	systemUri: string;
-	systemLabel: string;
-	items: { uri: string; label: string; kind: "BP" | "Activity" | "DataObject" }[];
-}
-
-interface OverlapAnalysis {
-	totalBPs: number;
-	totalActivities: number;
-	totalDataObjects: number;
-	uniqueContributions: UniqueContribution[];
-	sharedItems: (ConceptEntry & { coverageCount: number })[];
-}
-
-// ── Pure analysis function ────────────────────────────────────────────────────
-
-function computeOverlap(allDetails: SystemDetails[]): OverlapAnalysis {
-	const conceptMap = new Map<string, ConceptEntry>();
-
-	for (const details of allDetails) {
-		for (const bp of details.businessProcesses) {
-			const existing = conceptMap.get(bp.uri);
-			if (existing) {
-				existing.supportingSystemUris.push(details.systemUri);
-			} else {
-				conceptMap.set(bp.uri, {
-					uri: bp.uri,
-					label: bp.label,
-					kind: "BP",
-					supportingSystemUris: [details.systemUri],
-				});
-			}
-		}
-		for (const act of details.activities) {
-			const existing = conceptMap.get(act.uri);
-			if (existing) {
-				existing.supportingSystemUris.push(details.systemUri);
-			} else {
-				conceptMap.set(act.uri, {
-					uri: act.uri,
-					label: act.label,
-					kind: "Activity",
-					supportingSystemUris: [details.systemUri],
-				});
-			}
-		}
-		for (const dobj of details.dataObjects) {
-			const existing = conceptMap.get(dobj.uri);
-			if (existing) {
-				existing.supportingSystemUris.push(details.systemUri);
-			} else {
-				conceptMap.set(dobj.uri, {
-					uri: dobj.uri,
-					label: dobj.label,
-					kind: "DataObject",
-					supportingSystemUris: [details.systemUri],
-				});
-			}
-		}
-	}
-
-	const allConcepts = Array.from(conceptMap.values());
-	const totalBPs = allConcepts.filter((c) => c.kind === "BP").length;
-	const totalActivities = allConcepts.filter((c) => c.kind === "Activity").length;
-	const totalDataObjects = allConcepts.filter((c) => c.kind === "DataObject").length;
-
-	// Unique: covered by exactly one system — group by that system
-	const bySystem = new Map<string, UniqueContribution>();
-	for (const concept of allConcepts.filter((c) => c.supportingSystemUris.length === 1)) {
-		const sysUri = concept.supportingSystemUris[0];
-		const sysDetails = allDetails.find((d) => d.systemUri === sysUri);
-		if (!sysDetails) continue;
-		const entry = bySystem.get(sysUri);
-		if (entry) {
-			entry.items.push({ uri: concept.uri, label: concept.label, kind: concept.kind });
-		} else {
-			bySystem.set(sysUri, {
-				systemUri: sysUri,
-				systemLabel: sysDetails.systemName,
-				items: [{ uri: concept.uri, label: concept.label, kind: concept.kind }],
-			});
-		}
-	}
-
-	const uniqueContributions = Array.from(bySystem.values()).sort((a, b) =>
-		a.systemLabel.localeCompare(b.systemLabel)
-	);
-
-	// Shared: covered by 2+ systems, sorted by coverage count ascending so the
-	// "most unique" shared items (covered by fewest systems) appear first.
-	const sharedItems = allConcepts
-		.filter((c) => c.supportingSystemUris.length > 1)
-		.map((c) => ({ ...c, coverageCount: c.supportingSystemUris.length }))
-		.sort(
-			(a, b) =>
-				a.coverageCount - b.coverageCount || a.label.localeCompare(b.label)
-		);
-
-	return { totalBPs, totalActivities, totalDataObjects, uniqueContributions, sharedItems };
-}
-
-// ── Kind badge ────────────────────────────────────────────────────────────────
-
-const KIND_STYLES: Record<"BP" | "Activity" | "DataObject", { className: string; label: string }> = {
-	BP: { className: "bg-blue-100 text-blue-700", label: "BP" },
-	Activity: { className: "bg-purple-100 text-purple-700", label: "Act" },
-	DataObject: { className: "bg-teal-100 text-teal-700", label: "Data" },
-};
-
-const KindBadge = ({ kind }: { kind: "BP" | "Activity" | "DataObject" }) => (
-	<span
-		className={`mt-0.5 shrink-0 rounded px-1 py-0.5 text-[9px] font-bold leading-none uppercase ${KIND_STYLES[kind].className}`}
-	>
-		{KIND_STYLES[kind].label}
-	</span>
-);
-
-// ── Collapsible section header ────────────────────────────────────────────────
-
-interface SectionHeaderProps {
-	label: string;
-	count?: number;
-	expanded: boolean;
-	onToggle: () => void;
-	className?: string;
-}
-
-const SectionHeader = ({ label, count, expanded, onToggle, className = "" }: SectionHeaderProps) => (
-	<button
-		type="button"
-		onClick={onToggle}
-		className={`flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:brightness-95 ${className}`}
-	>
-		{expanded ? (
-			<ChevronDown className="h-3.5 w-3.5 shrink-0 text-current opacity-60" />
-		) : (
-			<ChevronRight className="h-3.5 w-3.5 shrink-0 text-current opacity-60" />
-		)}
-		<span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
-		{count !== undefined && (
-			<span className="ml-auto text-xs opacity-60">{count}</span>
-		)}
-	</button>
-);
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -185,13 +30,12 @@ interface CapabilityGroupSidebarProps {
 
 export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSidebarProps) => {
 	const { insightId } = useInsight();
+	const navigate = useNavigate();
 
 	const [allDetails, setAllDetails] = useState<SystemDetails[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
-	const [uniqueExpanded, setUniqueExpanded] = useState(true);
-	const [sharedExpanded, setSharedExpanded] = useState(false);
-	// Set of system URIs whose item list is expanded (empty = all collapsed)
+	// Set of system URIs whose detail rows are expanded (empty = all collapsed)
 	const [expandedSystems, setExpandedSystems] = useState<Set<string>>(new Set());
 
 	const toggleSystem = useCallback((uri: string) => {
@@ -247,8 +91,6 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 		setIsLoading(true);
 		setLoadError(null);
 		setAllDetails([]);
-		setSharedExpanded(false);
-		setUniqueExpanded(true);
 		setExpandedSystems(new Set());
 
 		const fetches = group.systems.map((sys) =>
@@ -348,7 +190,7 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 						</span>
 					</div>
 
-				{/* Badge key */}
+					{/* Badge key */}
 				<div className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
 					<span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Key:</span>
 					{(["BP", "Activity", "DataObject"] as const).map((k) => (
@@ -359,97 +201,93 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 					))}
 				</div>
 
-				{/* ── Zone 1: Unique Contributions ────────────────────── */}
-				<div className="border-b border-gray-100">
-					<SectionHeader
-						label="Unique Contributions"
-						count={analysis.uniqueContributions.length}
-						expanded={uniqueExpanded}
-						onToggle={() => setUniqueExpanded((v) => !v)}
-						className="bg-amber-50 text-amber-700"
-					/>
-
-					{uniqueExpanded && (
-						analysis.uniqueContributions.length === 0 ? (
-							<div className="flex items-center gap-2 bg-emerald-50/60 px-4 py-4 text-xs text-emerald-700">
-								<span className="text-emerald-500">✓</span>
-								No uniquely owned capabilities — good coverage
-							</div>
-						) : (
-							<ul className="divide-y divide-gray-50">
-								{analysis.uniqueContributions.map((contrib) => {
-									const open = expandedSystems.has(contrib.systemUri);
-									return (
-										<li key={contrib.systemUri}>
-											<button
-												type="button"
-												onClick={() => toggleSystem(contrib.systemUri)}
-												className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
-											>
-												{open ? (
-													<ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
-												) : (
-													<ChevronRight className="h-3 w-3 shrink-0 text-gray-400" />
-												)}
-												<span className="flex-1 text-xs font-semibold text-gray-800">
-													{contrib.systemLabel}
-												</span>
-												<span className="text-xs text-gray-400">{contrib.items.length}</span>
-											</button>
-											{open && (
-												<ul className="space-y-1.5 border-t border-gray-50 px-4 pb-3 pt-2">
-													{contrib.items.map((item) => (
-														<li
-															key={item.uri}
-															className="flex items-start gap-2 text-xs text-gray-600"
-														>
+				{/* ── Systems by Overlap Ranking ──────────────────────── */}
+				<p className="px-4 py-3 text-[11px] leading-relaxed text-gray-400">
+					This list ranks each system in the capability group by <span className="font-semibold text-gray-500">Overlap Score</span>, defined as the percent of Business Processes, Activities, and Data Objects that are also supported by another system in the capability group.
+				</p>
+				<ul className="divide-y divide-gray-100">
+					{analysis.overlapRanking.map((sys, idx) => {
+						const pct = Math.round(sys.score * 100);
+						const open = expandedSystems.has(sys.systemUri);
+						const barColor = pct >= 66 ? "bg-emerald-400" : pct >= 33 ? "bg-amber-400" : "bg-red-400";
+						const pctColor = pct >= 66 ? "text-emerald-600" : pct >= 33 ? "text-amber-600" : "text-red-500";
+						return (
+							<li key={sys.systemUri}>
+								{/* Row header */}
+								<button
+									type="button"
+									onClick={() => toggleSystem(sys.systemUri)}
+									className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
+								>
+									{open ? (
+										<ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
+									) : (
+										<ChevronRight className="h-3 w-3 shrink-0 text-gray-400" />
+									)}
+									<span className="w-4 shrink-0 text-right text-[10px] text-gray-400">{idx + 1}</span>
+									<span className="flex-1 truncate text-xs font-medium text-gray-800" title={sys.systemLabel}>
+										{sys.systemLabel}
+									</span>
+									<span className={`shrink-0 text-xs font-semibold ${pctColor}`}>{pct}%</span>
+								</button>
+								{/* Progress bar — always visible */}
+								<div className="mx-4 mb-1 h-1 overflow-hidden rounded-full bg-gray-100">
+									<div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+								</div>							{/* Examine removal impact button */}
+							<div className="mx-4 mb-2 flex justify-end">
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation();
+										navigate("/removal-impact", {
+											state: { systemUri: sys.systemUri, systemLabel: sys.systemLabel },
+										});
+									}}
+									className="text-[11px] text-blue-500 transition-colors hover:text-blue-700 hover:underline"
+								>
+									Examine removal impact →
+								</button>
+							</div>								{/* Expanded detail */}
+								{open && (
+									<div className="space-y-3 border-t border-gray-50 px-4 pb-3 pt-2">
+										{/* Unique items — removal impact */}
+									{sys.uniqueItems.length > 0 && (
+											<div>
+												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
+													Removal impact ({sys.uniqueItems.length})
+												</p>
+												<ul className="space-y-1">
+													{sys.uniqueItems.map((item) => (
+														<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-600">
 															<KindBadge kind={item.kind} />
 															<span>{item.label}</span>
 														</li>
 													))}
 												</ul>
-											)}
-										</li>
-									);
-								})}
-							</ul>
-						)
-					)}
-				</div>
-
-				{/* ── Zone 2: Shared Capabilities ─────────────────────── */}
-				<div>
-					<SectionHeader
-						label="Shared Capabilities"
-						count={analysis.sharedItems.length}
-						expanded={sharedExpanded}
-						onToggle={() => setSharedExpanded((v) => !v)}
-						className="hover:bg-gray-50 text-gray-600"
-					/>
-
-					{sharedExpanded && (
-						<ul className="divide-y divide-gray-50 border-t border-gray-100">
-							{analysis.sharedItems.length === 0 ? (
-								<li className="px-4 py-3 text-xs italic text-gray-400">
-									None
-								</li>
-							) : (
-								analysis.sharedItems.map((item) => (
-									<li
-										key={item.uri}
-										className="flex items-start gap-2 px-4 py-2.5 text-xs text-gray-600"
-									>
-										<KindBadge kind={item.kind} />
-										<span className="flex-1">{item.label}</span>
-										<span className="shrink-0 text-gray-400">
-											{item.coverageCount}/{group.systems.length}
-										</span>
-									</li>
-								))
-							)}
-						</ul>
-					)}
-				</div>
+											</div>
+										)}
+										{/* Shared items */}
+										{sys.sharedItems.length > 0 && (
+											<div>
+												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+													Shared with others ({sys.sharedItems.length})
+												</p>
+												<ul className="space-y-1">
+													{sys.sharedItems.map((item) => (
+														<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-500">
+															<KindBadge kind={item.kind} />
+															<span>{item.label}</span>
+														</li>
+													))}
+												</ul>
+											</div>
+										)}
+									</div>
+								)}
+							</li>
+						);
+					})}
+				</ul>
 			</div>
 		)}
 		</aside>

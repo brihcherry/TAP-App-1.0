@@ -3,6 +3,7 @@ export * from "./CapabilityBubbleGraph";
 export * from "./CapabilityGroupSidebar";
 export * from "./GraphLegend";
 export * from "./GraphTooltip";
+export * from "./KindBadge";
 export * from "./NetworkGraph";
 export * from "./LoadingScreen";
 export * from "./MainNavigation";

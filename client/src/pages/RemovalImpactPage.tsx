@@ -1,21 +1,21 @@
-// RemovalImpactPage.tsx — System Removal Impact Analyzer.
+// RemovalImpactPage.tsx — Data Flow Impact Analyzer.
 //
 // Two-panel layout:
 //   Left:  System directory list (click to select a system for analysis)
-//   Right: Tiered impact report (Critical / High / Medium)
+//   Right: Data flow impact report (Sole Provider / Critical Relay / Non-Critical)
 //
 // Data sources:
-//   - GetSystemNetwork (once on mount) — raw tripartite graph for downstream detection
-//   - GetSystemRemovalImpact (per selection) — provider counts + capability coverage
+//   - GetSystemNetwork (once on mount) — raw tripartite graph for system list building
+//   - GetDataFlowImpact (per selection) — per-DataObject ICD flow graph + isolation analysis
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
 import { ArrowLeft, AlertTriangle, AlertCircle, Info, ChevronDown, ChevronRight } from "lucide-react";
-import { computeRemovalImpact } from "@/lib/removalImpact";
+import { computeDataFlowImpact } from "@/lib/dataFlowImpact";
 import type { RawNetworkData } from "@/lib/systemSubgraph";
-import type { RemovalImpactReactorResponse, RemovalImpactResult } from "@/types/removalImpact";
+import type { DataFlowImpactReactorResponse, DataFlowImpactResult, DataFlowEntry } from "@/types/dataFlowImpact";
 
 const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
 
@@ -90,13 +90,14 @@ export const RemovalImpactPage = () => {
 
   // ── Selection & analysis state ────────────────────────────────────────────
   const [selectedSystem, setSelectedSystem] = useState<SystemEntry | null>(null);
-  const [impactResult, setImpactResult] = useState<RemovalImpactResult | null>(null);
+  const [impactResult, setImpactResult] = useState<DataFlowImpactResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   // ── List view state ───────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
-  const [mediumExpanded, setMediumExpanded] = useState(false);
+  const [nonCriticalExpanded, setNonCriticalExpanded] = useState(false);
+  const [showTermGuide, setShowTermGuide] = useState(false);
 
   // ── Fetch network data on mount ───────────────────────────────────────────
   useEffect(() => {
@@ -149,15 +150,15 @@ export const RemovalImpactPage = () => {
 
   // ── Run analysis when a system is selected ────────────────────────────────
   useEffect(() => {
-    if (!insightId || !selectedSystem || !rawData) return;
+    if (!insightId || !selectedSystem) return;
     let cancelled = false;
 
     setIsAnalyzing(true);
     setAnalysisError(null);
     setImpactResult(null);
-    setMediumExpanded(false);
+    setNonCriticalExpanded(false);
 
-    const pixel = `GetSystemRemovalImpact(database=["${DATABASE_ID}"], system=["${selectedSystem.uri}"]);`;
+    const pixel = `GetDataFlowImpact(database=["${DATABASE_ID}"], system=["${selectedSystem.uri}"]);`;
 
     runPixel(pixel, insightId)
       .then((response) => {
@@ -166,9 +167,9 @@ export const RemovalImpactPage = () => {
           setAnalysisError(response.errors.join(", "));
           return;
         }
-        const output = response.pixelReturn[0]?.output as RemovalImpactReactorResponse;
+        const output = response.pixelReturn[0]?.output as DataFlowImpactReactorResponse;
         if (output?.systemUri) {
-          const result = computeRemovalImpact(selectedSystem.uri, output, rawData);
+          const result = computeDataFlowImpact(output);
           setImpactResult(result);
         } else {
           setAnalysisError("Unexpected response format from reactor.");
@@ -183,7 +184,7 @@ export const RemovalImpactPage = () => {
       });
 
     return () => { cancelled = true; };
-  }, [insightId, selectedSystem, rawData]);
+  }, [insightId, selectedSystem]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleSelectSystem = useCallback((entry: SystemEntry) => {
@@ -199,7 +200,8 @@ export const RemovalImpactPage = () => {
     setSelectedSystem(null);
     setImpactResult(null);
     setAnalysisError(null);
-    setMediumExpanded(false);
+    setNonCriticalExpanded(false);
+    setShowTermGuide(false);
   }, [location.state, navigate]);
 
   // ── Render: Analysis view ─────────────────────────────────────────────────
@@ -218,21 +220,37 @@ export const RemovalImpactPage = () => {
           </button>
           <div>
             <h1 className="text-lg font-semibold text-gray-900">
-              Removal Impact: {selectedSystem.label}
+              Data Flow Impact: {selectedSystem.label}
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               Simulated removal analysis &middot; {selectedSystem.connectionCount} connection{selectedSystem.connectionCount !== 1 ? "s" : ""}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowTermGuide((prev) => !prev)}
+            className="ml-auto inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:border-blue-300 hover:text-blue-700"
+            aria-expanded={showTermGuide}
+            aria-label="Toggle impact term definitions"
+          >
+            <Info className="h-3.5 w-3.5" />
+            What These Terms Mean
+          </button>
         </header>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+          {showTermGuide && (
+            <div className="max-w-4xl mx-auto mb-4">
+              <TermGuideCard />
+            </div>
+          )}
+
           {/* Loading */}
           {isAnalyzing && (
             <div className="flex flex-col items-center justify-center gap-3 py-20">
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
-              <p className="text-sm text-gray-500">Analyzing removal impact…</p>
+              <p className="text-sm text-gray-500">Analyzing data flow impact…</p>
             </div>
           )}
 
@@ -253,201 +271,110 @@ export const RemovalImpactPage = () => {
                 <div className="flex gap-3">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    Critical: {impactResult.summary.critical}
+                    Sole Provider: {impactResult.soleProvider.length}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    High: {impactResult.summary.high}
+                    Critical Relay: {impactResult.criticalRelay.length}
                   </span>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
                     <Info className="h-3.5 w-3.5" />
-                    Medium: {impactResult.summary.medium}
+                    Non-Critical: {impactResult.nonCritical.length}
                   </span>
                 </div>
-                {impactResult.summary.critical === 0 && impactResult.summary.high === 0 && impactResult.summary.medium === 0 && (
+                <p className="mt-3 text-sm text-gray-500">
+                  {impactResult.summary.totalDataObjects} data object{impactResult.summary.totalDataObjects !== 1 ? "s" : ""} impacted
+                  {impactResult.summary.totalIsolatedSystems > 0 && (
+                    <> &middot; <span className="font-medium text-red-700">{impactResult.summary.totalIsolatedSystems} system{impactResult.summary.totalIsolatedSystems !== 1 ? "s" : ""} would be isolated</span></>
+                  )}
+                </p>
+                {impactResult.summary.totalDataObjects === 0 && (
                   <p className="mt-3 text-sm text-gray-500">
-                    No significant impact detected. This system has no outbound data flows or capability group memberships recorded in the current dataset.
+                    No data flow participation detected. This system has no recorded ICD connections in the current dataset.
                   </p>
                 )}
               </div>
 
-              {/* ── Critical impacts ────────────────────────────────────── */}
-              {impactResult.summary.critical > 0 && (
+              {/* ── Sole Provider section ───────────────────────────────── */}
+              {impactResult.soleProvider.length > 0 && (
                 <div className="rounded-lg border-2 border-red-300 bg-white p-4">
                   <h2 className="text-sm font-semibold text-red-800 mb-3 flex items-center gap-2">
                     <AlertTriangle className="h-4 w-4" />
-                    Critical Impacts
+                    Sole Provider — All Downstream Loses Access
                   </h2>
-
-                  {/* Orphaned data objects */}
-                  {impactResult.dataObjectImpacts
-                    .filter((d) => d.isOrphaned)
-                    .length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-red-600 mb-2">
-                        Orphaned Data Objects (No Other Provider)
-                      </h3>
-                      <ul className="space-y-1.5">
-                        {impactResult.dataObjectImpacts
-                          .filter((d) => d.isOrphaned)
-                          .map((d) => (
-                            <li
-                              key={d.uri}
-                              className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm"
-                            >
-                              <span className="font-medium text-red-900">{d.label}</span>
-                              <span className="ml-2 text-xs text-red-600">
-                                — sole provider in enterprise
-                              </span>
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Capability groups dropping to 0 */}
-                  {impactResult.capabilityGroupImpacts
-                    .filter((c) => c.tier === "critical")
-                    .length > 0 && (
-                    <div>
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-red-600 mb-2">
-                        Unsupported Capability Groups (0 Remaining)
-                      </h3>
-                      <ul className="space-y-1.5">
-                        {impactResult.capabilityGroupImpacts
-                          .filter((c) => c.tier === "critical")
-                          .map((c) => (
-                            <li
-                              key={c.uri}
-                              className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm"
-                            >
-                              <span className="font-medium text-red-900">{c.label}</span>
-                              <span className="ml-2 text-xs text-red-600">
-                                — was {c.totalSupporters} supporter{c.totalSupporters !== 1 ? "s" : ""}, drops to 0
-                              </span>
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── High impacts ────────────────────────────────────────── */}
-              {impactResult.capabilityGroupImpacts.filter((c) => c.tier === "high").length > 0 && (
-                <div className="rounded-lg border-2 border-amber-300 bg-white p-4">
-                  <h2 className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
-                    <AlertCircle className="h-4 w-4" />
-                    High Impacts — Single-Point Dependencies
-                  </h2>
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-600 mb-2">
-                    Capability Groups Dropping to 1 Supporter
-                  </h3>
-                  <ul className="space-y-1.5">
-                    {impactResult.capabilityGroupImpacts
-                      .filter((c) => c.tier === "high")
-                      .map((c) => {
-                        const remainingSystem = c.systems.find(
-                          (s) => s.uri !== selectedSystem.uri,
-                        );
-                        return (
-                          <li
-                            key={c.uri}
-                            className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm"
-                          >
-                            <span className="font-medium text-amber-900">{c.label}</span>
-                            <span className="ml-2 text-xs text-amber-700">
-                              — only{" "}
-                              <span className="font-semibold">
-                                {remainingSystem?.label ?? "1 system"}
-                              </span>{" "}
-                              remains (was {c.totalSupporters})
-                            </span>
-                          </li>
-                        );
-                      })}
+                  <ul className="space-y-3">
+                    {impactResult.soleProvider.map((entry) => (
+                      <DataFlowImpactCard key={entry.dataObjectUri} entry={entry} variant="critical" />
+                    ))}
                   </ul>
                 </div>
               )}
 
-              {/* ── Medium impacts (collapsible) ───────────────────────── */}
-              {impactResult.affectedSystemImpacts.length > 0 && (
+              {/* ── Critical Relay section ──────────────────────────────── */}
+              {impactResult.criticalRelay.length > 0 && (
+                <div className="rounded-lg border-2 border-amber-300 bg-white p-4">
+                  <h2 className="text-sm font-semibold text-amber-800 mb-3 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Critical Relay — Removal Isolates Systems
+                  </h2>
+                  <ul className="space-y-3">
+                    {impactResult.criticalRelay.map((entry) => (
+                      <DataFlowImpactCard key={entry.dataObjectUri} entry={entry} variant="warning" />
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* ── Non-Critical section (collapsible) ─────────────────── */}
+              {impactResult.nonCritical.length > 0 && (
                 <div className="rounded-lg border border-gray-200 bg-white">
                   <button
                     type="button"
-                    onClick={() => setMediumExpanded((prev) => !prev)}
+                    onClick={() => setNonCriticalExpanded((prev) => !prev)}
                     className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
                   >
                     <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                       <Info className="h-4 w-4 text-gray-500" />
-                      Downstream Systems Losing Data Feeds
+                      Non-Critical Participation
                       <span className="text-xs font-normal text-gray-400">
-                        ({impactResult.affectedSystemImpacts.length} system{impactResult.affectedSystemImpacts.length !== 1 ? "s" : ""})
+                        ({impactResult.nonCritical.length} data object{impactResult.nonCritical.length !== 1 ? "s" : ""})
                       </span>
                     </h2>
-                    {mediumExpanded ? (
+                    {nonCriticalExpanded ? (
                       <ChevronDown className="h-4 w-4 text-gray-400" />
                     ) : (
                       <ChevronRight className="h-4 w-4 text-gray-400" />
                     )}
                   </button>
-                  {mediumExpanded && (
+                  {nonCriticalExpanded && (
                     <div className="border-t border-gray-200 p-4">
                       <ul className="space-y-2">
-                        {impactResult.affectedSystemImpacts.map((sys) => (
+                        {impactResult.nonCritical.map((entry) => (
                           <li
-                            key={sys.uri}
+                            key={entry.dataObjectUri}
                             className="rounded border border-gray-200 bg-gray-50 px-3 py-2"
                           >
                             <div className="flex items-baseline justify-between">
                               <span className="text-sm font-medium text-gray-800">
-                                {sys.label}
+                                {entry.dataObjectLabel}
                               </span>
-                              {sys.hasAlternatives && (
-                                <span className="text-[10px] uppercase tracking-wide text-green-600 font-semibold">
-                                  Has alternatives
+                              <div className="flex items-center gap-2">
+                                <RoleBadge role={entry.role} />
+                                <span className="text-xs text-gray-500">
+                                  {entry.totalSystemsInGraph} system{entry.totalSystemsInGraph !== 1 ? "s" : ""} in graph
                                 </span>
-                              )}
+                              </div>
                             </div>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {sys.lostDataObjects.map((doLabel) => (
-                                <span
-                                  key={doLabel}
-                                  className="inline-block rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-700"
-                                >
-                                  {doLabel}
-                                </span>
-                              ))}
-                            </div>
+                            {entry.alternativeProviders.length > 0 && (
+                              <p className="mt-1 text-xs text-gray-500">
+                                Alternative providers: {entry.alternativeProviders.map((p) => p.label).join(", ")}
+                              </p>
+                            )}
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* ── Non-orphaned data objects (for context) ────────────── */}
-              {impactResult.dataObjectImpacts.filter((d) => !d.isOrphaned).length > 0 && (
-                <div className="rounded-lg border border-gray-200 bg-white p-4">
-                  <h2 className="text-sm font-semibold text-gray-700 mb-3">
-                    Data Objects With Alternative Providers
-                  </h2>
-                  <ul className="space-y-1.5">
-                    {impactResult.dataObjectImpacts
-                      .filter((d) => !d.isOrphaned)
-                      .map((d) => (
-                        <li
-                          key={d.uri}
-                          className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm flex items-baseline justify-between"
-                        >
-                          <span className="font-medium text-gray-800">{d.label}</span>
-                          <span className="text-xs text-gray-500">
-                            {d.allProviders.length - 1} other provider{d.allProviders.length - 1 !== 1 ? "s" : ""}
-                          </span>
-                        </li>
-                      ))}
-                  </ul>
                 </div>
               )}
             </div>
@@ -456,17 +383,34 @@ export const RemovalImpactPage = () => {
       </div>
     );
   }
-
   // ── Render: System selection view ─────────────────────────────────────────
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
-      <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
-        <h1 className="text-lg font-semibold text-gray-900">System Removal Impact Analyzer</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
-          Select a system to simulate its removal and assess downstream impact.
-        </p>
+      <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">Data Flow Impact Analyzer</h1>
+          <p className="mt-0.5 text-sm text-gray-500">
+            Select a system to simulate its removal and assess data flow impact.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowTermGuide((prev) => !prev)}
+          className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:border-blue-300 hover:text-blue-700"
+          aria-expanded={showTermGuide}
+          aria-label="Toggle impact term definitions"
+        >
+          <Info className="h-3.5 w-3.5" />
+          What These Terms Mean
+        </button>
       </header>
+
+      {showTermGuide && (
+        <div className="shrink-0 bg-gray-50 px-6 pt-4">
+          <TermGuideCard />
+        </div>
+      )}
 
       {/* Loading */}
       {isLoadingNetwork && (
@@ -544,3 +488,93 @@ export const RemovalImpactPage = () => {
     </div>
   );
 };
+
+// ── Helper components ─────────────────────────────────────────────────────────
+
+function RoleBadge({ role }: { role: string }) {
+  const styles: Record<string, string> = {
+    provider: "bg-blue-100 text-blue-700",
+    consumer: "bg-green-100 text-green-700",
+    relay: "bg-purple-100 text-purple-700",
+  };
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${styles[role] ?? "bg-gray-100 text-gray-600"}`}>
+      {role}
+    </span>
+  );
+}
+
+function TermGuideCard() {
+  return (
+    <section className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+      <h2 className="text-sm font-semibold text-blue-900">Removal Impact Terms</h2>
+      <div className="mt-2 space-y-2 text-xs text-blue-900">
+        <p>
+          <span className="font-semibold">Provider:</span> The removed system is a source provider for that data object.
+        </p>
+        <p>
+          <span className="font-semibold">Relay:</span> The removed system acts as a bridge in the path, passing data between systems.
+        </p>
+        <p>
+          <span className="font-semibold">Sole Provider:</span> No other provider remains for that data object after removal.
+        </p>
+        <p>
+          <span className="font-semibold">Critical Relay:</span> Other providers may exist, but removing this system breaks path connectivity and isolates systems.
+        </p>
+        <p>
+          <span className="font-semibold">Non-Critical:</span> Removing this system does not isolate any other system for that data object.
+        </p>
+        <p>
+          <span className="font-semibold">Isolated Systems:</span> Systems that can no longer be reached from remaining providers in the flow graph.
+        </p>
+        <p>
+          <span className="font-semibold">Alternative Providers:</span> Other systems that can originate the same data object.
+        </p>
+        <p>
+          <span className="font-semibold">Systems in Flow Graph:</span> Total systems participating in that data object's directed network.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function DataFlowImpactCard({ entry, variant }: { entry: DataFlowEntry; variant: "critical" | "warning" }) {
+  const borderColor = variant === "critical" ? "border-red-200" : "border-amber-200";
+  const bgColor = variant === "critical" ? "bg-red-50" : "bg-amber-50";
+  const textColor = variant === "critical" ? "text-red-900" : "text-amber-900";
+  const subTextColor = variant === "critical" ? "text-red-600" : "text-amber-700";
+
+  return (
+    <li className={`rounded border ${borderColor} ${bgColor} px-3 py-2.5`}>
+      <div className="flex items-baseline justify-between">
+        <span className={`text-sm font-medium ${textColor}`}>{entry.dataObjectLabel}</span>
+        <RoleBadge role={entry.role} />
+      </div>
+      {entry.isolatedSystems.length > 0 && (
+        <div className="mt-1.5">
+          <span className={`text-xs font-medium ${subTextColor}`}>
+            Isolated systems ({entry.isolatedSystems.length}):
+          </span>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {entry.isolatedSystems.map((sys) => (
+              <span
+                key={sys.uri}
+                className={`inline-block rounded px-1.5 py-0.5 text-xs ${variant === "critical" ? "bg-red-200 text-red-800" : "bg-amber-200 text-amber-800"}`}
+              >
+                {sys.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {entry.alternativeProviders.length > 0 && (
+        <p className="mt-1 text-xs text-gray-500">
+          Alternative providers: {entry.alternativeProviders.map((p) => p.label).join(", ")}
+        </p>
+      )}
+      <p className="mt-1 text-xs text-gray-400">
+        {entry.totalSystemsInGraph} system{entry.totalSystemsInGraph !== 1 ? "s" : ""} in flow graph
+      </p>
+    </li>
+  );
+}

@@ -254,7 +254,7 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 									{sys.uniqueItems.length > 0 && (
 											<div>
 												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
-													Removal impact ({sys.uniqueItems.length})
+													Unique Contributions ({sys.uniqueItems.length})
 												</p>
 												<ul className="space-y-1">
 													{sys.uniqueItems.map((item) => (

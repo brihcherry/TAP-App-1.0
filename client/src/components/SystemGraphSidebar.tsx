@@ -28,6 +28,8 @@ interface SystemGraphSidebarProps {
 	onUnlockGraph: () => void;
 	/** Navigate back to the system list */
 	onBack: () => void;
+	/** When true, hides the Back to List button (e.g. when back is shown in the page header) */
+	hideBackButton?: boolean;
 }
 
 export const SystemGraphSidebar = ({
@@ -43,18 +45,21 @@ export const SystemGraphSidebar = ({
 	onLockGraph,
 	onUnlockGraph,
 	onBack,
+	hideBackButton = false,
 }: SystemGraphSidebarProps) => {
 	return (
 		<aside className="w-64 shrink-0 border-r border-gray-200 bg-gray-50 p-4 flex flex-col gap-4 overflow-y-auto">
-			{/* ── Back button ─────────────────────────────────────────────── */}
-			<Button
-				variant="outline"
-				className="w-full justify-start gap-2"
-				onClick={onBack}
-			>
-				<ArrowLeft className="h-4 w-4" />
-				Back to List
-			</Button>
+			{/* ── Back button ────────────────────────────────────────────── */}
+			{!hideBackButton && (
+				<Button
+					variant="outline"
+					className="w-full justify-start gap-2"
+					onClick={onBack}
+				>
+					<ArrowLeft className="h-4 w-4" />
+					Back to List
+				</Button>
+			)}
 
 			{/* ── System info ─────────────────────────────────────────────── */}
 			<div className="rounded-lg border border-blue-200 bg-blue-50 p-3">

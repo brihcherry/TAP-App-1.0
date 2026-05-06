@@ -15,9 +15,9 @@ import { KindBadge } from "./KindBadge";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const MIN_WIDTH = 240;
+const MIN_WIDTH = 360;
 const MAX_WIDTH = 600;
-const DEFAULT_WIDTH = 288; // w-72
+const DEFAULT_WIDTH = 360;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -177,16 +177,16 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 					{/* Stats bar */}
 					<div className="flex items-center gap-4 border-b border-gray-100 px-4 py-2.5 text-xs text-gray-500">
 						<span>
-							<strong className="text-gray-800">{group.systems.length}</strong> systems
+							<strong className="text-gray-800">{group.systems.length}</strong> Systems
 						</span>
 						<span>
 							<strong className="text-gray-800">{analysis.totalBPs}</strong> BPs
 						</span>
 						<span>
-							<strong className="text-gray-800">{analysis.totalActivities}</strong> activities
+							<strong className="text-gray-800">{analysis.totalActivities}</strong> Activities
 						</span>
 						<span>
-							<strong className="text-gray-800">{analysis.totalDataObjects}</strong> data objects
+							<strong className="text-gray-800">{analysis.totalDataObjects}</strong> Data Objects
 						</span>
 					</div>
 
@@ -234,7 +234,23 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 								<div className="mx-4 mb-1 h-1 overflow-hidden rounded-full bg-gray-100">
 									<div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
 								</div>							{/* Examine removal impact button */}
-							<div className="mx-4 mb-2 flex justify-end">
+							<div className="mx-4 mb-2 flex justify-end gap-2">
+								<button
+									type="button"
+									onClick={(e) => {
+										e.stopPropagation();
+										navigate("/system-network", {
+											state: {
+												systemUri: sys.systemUri,
+												systemLabel: sys.systemLabel,
+												returnGroup: { uri: group.uri, label: group.label },
+											},
+										});
+									}}
+									className="inline-flex items-center gap-1 rounded-md bg-gray-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-gray-700 active:bg-gray-800"
+								>
+									View Data Flow Graph →
+								</button>
 								<button
 									type="button"
 									onClick={(e) => {
@@ -247,7 +263,7 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 											},
 										});
 									}}
-									className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800"
+									className="inline-flex items-center gap-1 rounded-md bg-blue-400 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800"
 								>
 									Data Object Impact →
 								</button>

@@ -5,9 +5,11 @@
 //
 // Data comes from GetSystemNetworkReactor (fetched once on mount).
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
+import { ArrowLeft } from "lucide-react";
 import { NetworkGraph } from "@/components/NetworkGraph";
 import { GraphTooltip } from "@/components/GraphTooltip";
 import { GraphLegend } from "@/components/GraphLegend";
@@ -47,6 +49,17 @@ function buildEntries(raw: RawNetworkData): NetworkEntry[] {
 
 export const SystemNetworkPage = () => {
   const { insightId } = useInsight();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // When navigated here from the capability group sidebar, location.state carries
+  // { systemUri, systemLabel, returnGroup }. Auto-select the system once data loads.
+  const fromSidebar = useRef<{ systemUri: string; systemLabel: string; returnGroup?: { uri: string; label: string } } | null>(
+    (location.state as { systemUri?: string; systemLabel?: string; returnGroup?: { uri: string; label: string } } | null)
+      ?.systemUri
+      ? (location.state as { systemUri: string; systemLabel: string; returnGroup?: { uri: string; label: string } })
+      : null
+  );
 
   // Shared data: raw response preserved for graph extraction
   const [rawData, setRawData] = useState<RawNetworkData | null>(null);
@@ -81,8 +94,16 @@ export const SystemNetworkPage = () => {
         }
         const output = response.pixelReturn[0]?.output as RawNetworkData;
         if (output?.nodes && output?.edges) {
+          const built = buildEntries(output);
           setRawData(output);
-          setEntries(buildEntries(output));
+          setEntries(built);
+          // Auto-select system if navigated here from the capability group sidebar
+          if (fromSidebar.current) {
+            const { systemUri, systemLabel } = fromSidebar.current;
+            const match = built.find((e) => e.uri === systemUri);
+            setSelectedSystem(match ?? { uri: systemUri, label: systemLabel, type: "System", connectionCount: 0 });
+            fromSidebar.current = null;
+          }
         } else {
           setError("Unexpected response format from server.");
         }
@@ -150,12 +171,18 @@ export const SystemNetworkPage = () => {
   }, []);
 
   const handleBack = useCallback(() => {
+    // If we came from the capability group sidebar, return to the bubble graph with the group restored
+    if (location.state && (location.state as { systemUri?: string }).systemUri) {
+      const returnGroup = (location.state as { returnGroup?: { uri: string; label: string } }).returnGroup;
+      navigate("/", { state: returnGroup ? { restoreGroup: returnGroup } : undefined });
+      return;
+    }
     setSelectedSystem(null);
     setDegree(1);
     setIsGraphLocked(false);
     setTooltip(null);
     setSelectedEdge(null);
-  }, []);
+  }, [location.state, navigate]);
 
   const handleExpand = useCallback(() => {
     setDegree((prev) => prev + 1);
@@ -182,6 +209,16 @@ export const SystemNetworkPage = () => {
       <div className="flex h-full flex-col overflow-hidden">
         {/* Header */}
         <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-4">
+          {location.state && (location.state as { systemUri?: string }).systemUri && (
+            <button
+              type="button"
+              onClick={handleBack}
+              className="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 shrink-0"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+          )}
           <div>
             <h1 className="text-lg font-semibold text-gray-900">
               {selectedSystem.label}: What is the network of systems that pass data objects to/from this system?
@@ -208,6 +245,7 @@ export const SystemNetworkPage = () => {
             onLockGraph={() => setIsGraphLocked(true)}
             onUnlockGraph={() => setIsGraphLocked(false)}
             onBack={handleBack}
+            hideBackButton={!!(location.state && (location.state as { systemUri?: string }).systemUri)}
           />
 
           <main className="flex-1 relative overflow-hidden">

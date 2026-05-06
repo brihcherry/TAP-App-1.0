@@ -192,9 +192,10 @@ export const RemovalImpactPage = () => {
   }, []);
 
   const handleBack = useCallback(() => {
-    // If we came from the sidebar, go back in history so the bubble graph is restored
+    // If we came from the sidebar, navigate back to home and restore the group state
     if (location.state && (location.state as { systemUri?: string }).systemUri) {
-      navigate(-1);
+      const returnGroup = (location.state as { returnGroup?: { uri: string; label: string } }).returnGroup;
+      navigate("/", { state: returnGroup ? { restoreGroup: returnGroup } : undefined });
       return;
     }
     setSelectedSystem(null);

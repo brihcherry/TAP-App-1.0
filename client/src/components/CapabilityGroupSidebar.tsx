@@ -240,12 +240,16 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 									onClick={(e) => {
 										e.stopPropagation();
 										navigate("/removal-impact", {
-											state: { systemUri: sys.systemUri, systemLabel: sys.systemLabel },
+											state: {
+												systemUri: sys.systemUri,
+												systemLabel: sys.systemLabel,
+												returnGroup: { uri: group.uri, label: group.label },
+											},
 										});
 									}}
-									className="text-[11px] text-blue-500 transition-colors hover:text-blue-700 hover:underline"
+									className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800"
 								>
-									Examine removal impact →
+									Data Object Impact →
 								</button>
 							</div>								{/* Expanded detail */}
 								{open && (

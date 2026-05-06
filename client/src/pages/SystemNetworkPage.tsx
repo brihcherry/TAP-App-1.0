@@ -9,7 +9,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ChevronDown, Search, X } from "lucide-react";
 import { NetworkGraph } from "@/components/NetworkGraph";
 import { GraphTooltip } from "@/components/GraphTooltip";
 import { GraphLegend } from "@/components/GraphLegend";
@@ -17,6 +17,7 @@ import { SystemGraphSidebar } from "@/components/SystemGraphSidebar";
 import { EdgeDetailSidebar } from "@/components/EdgeDetailSidebar";
 import { computeSubgraph, computeDirectNeighborCounts, canonicalPairKey, type RawNetworkData } from "@/lib/systemSubgraph";
 import type { TooltipData, ProcessedEdge } from "@/types/graph";
+import type { HighlightSet } from "@/lib/graphAnalysis";
 
 const TYPE_COLORS: Record<string, string> = {
   System: "rgb(31, 119, 180)",
@@ -76,6 +77,12 @@ export const SystemNetworkPage = () => {
   const [isGraphLocked, setIsGraphLocked] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<ProcessedEdge | null>(null);
+
+  // Data object filter state
+  const [dataObjectFilter, setDataObjectFilter] = useState<string | null>(null);
+  const [doDropdownOpen, setDoDropdownOpen] = useState(false);
+  const [doSearch, setDoSearch] = useState("");
+  const doDropdownRef = useRef<HTMLDivElement>(null);
 
   // ── Fetch (once on mount) ─────────────────────────────────────────────────
   useEffect(() => {
@@ -143,6 +150,64 @@ export const SystemNetworkPage = () => {
     return subgraph.edges;
   }, [subgraph]);
 
+  // ── Data object filter ────────────────────────────────────────────────────
+  // Sorted unique data objects present in the current subgraph, with the count
+  // of edges (connections) that carry each one.
+  const availableDataObjects = useMemo(() => {
+    if (!subgraph) return [];
+    const counts = new Map<string, number>();
+    for (const edge of subgraph.edges) {
+      const labels = new Set<string>([
+        ...(edge.forward?.dataObjects ?? []),
+        ...(edge.reverse?.dataObjects ?? []),
+      ]);
+      for (const label of labels) {
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      }
+    }
+    return Array.from(counts.entries())
+      .map(([label, edgeCount]) => ({ label, edgeCount }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [subgraph]);
+
+  // Subset of availableDataObjects filtered by the dropdown search input.
+  const filteredDataObjects = useMemo(() => {
+    const q = doSearch.trim().toLowerCase();
+    return q === ""
+      ? availableDataObjects
+      : availableDataObjects.filter((d) => d.label.toLowerCase().includes(q));
+  }, [availableDataObjects, doSearch]);
+
+  // HighlightSet for the selected data object: all edges and their endpoints
+  // that carry it in either the forward or reverse direction.
+  const dataObjectHighlightSet = useMemo((): HighlightSet | null => {
+    if (!dataObjectFilter || !subgraph) return null;
+    const nodeIds = new Set<string>();
+    const edgeIds = new Set<string>();
+    for (const edge of subgraph.edges) {
+      const inForward = edge.forward?.dataObjects.includes(dataObjectFilter) ?? false;
+      const inReverse = edge.reverse?.dataObjects.includes(dataObjectFilter) ?? false;
+      if (inForward || inReverse) {
+        edgeIds.add(edge.id);
+        nodeIds.add(edge.sourceId);
+        nodeIds.add(edge.targetId);
+      }
+    }
+    return { nodeIds, edgeIds };
+  }, [dataObjectFilter, subgraph]);
+
+  // Close the data object dropdown on outside click.
+  useEffect(() => {
+    if (!doDropdownOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (doDropdownRef.current && !doDropdownRef.current.contains(e.target as Node)) {
+        setDoDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [doDropdownOpen]);
+
   // Canonical pair key for the selected edge (drives NetworkGraph highlight)
   const selectedEdgePairKey = useMemo(() => {
     if (!selectedEdge) return null;
@@ -168,6 +233,9 @@ export const SystemNetworkPage = () => {
     setIsGraphLocked(false);
     setTooltip(null);
     setSelectedEdge(null);
+    setDataObjectFilter(null);
+    setDoDropdownOpen(false);
+    setDoSearch("");
   }, []);
 
   const handleBack = useCallback(() => {
@@ -182,16 +250,25 @@ export const SystemNetworkPage = () => {
     setIsGraphLocked(false);
     setTooltip(null);
     setSelectedEdge(null);
+    setDataObjectFilter(null);
+    setDoDropdownOpen(false);
+    setDoSearch("");
   }, [location.state, navigate]);
 
   const handleExpand = useCallback(() => {
     setDegree((prev) => prev + 1);
     setSelectedEdge(null);
+    setDataObjectFilter(null);
+    setDoDropdownOpen(false);
+    setDoSearch("");
   }, []);
 
   const handleDegreeChange = useCallback((newDegree: number) => {
     setDegree(newDegree);
     setSelectedEdge(null);
+    setDataObjectFilter(null);
+    setDoDropdownOpen(false);
+    setDoSearch("");
   }, []);
 
   const handleEdgeClick = useCallback((sourceId: string, targetId: string) => {
@@ -270,9 +347,106 @@ export const SystemNetworkPage = () => {
                   isInteractionLocked={isGraphLocked}
                   curveOffset={0}
                   selectedEdgePairKey={selectedEdgePairKey}
+                  highlightSet={dataObjectHighlightSet}
                 />
                 <GraphLegend entries={subgraph.legend} />
                 <GraphTooltip tooltip={tooltip} />
+                {/* ── Data Object Filter dropdown ─────────────────────────────── */}
+                <div ref={doDropdownRef} className="absolute top-3 left-3 z-20 flex flex-col gap-2">
+                  {/* Trigger row: dropdown toggle + conditional Reset Graph button */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDoDropdownOpen((prev) => !prev)}
+                      className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm shadow-md hover:bg-gray-50 focus:outline-none"
+                    >
+                      <span className="max-w-[200px] truncate text-gray-700">
+                        {dataObjectFilter ?? "Filter by Data Object"}
+                      </span>
+                      <ChevronDown
+                        className={`h-4 w-4 text-gray-400 transition-transform ${doDropdownOpen ? "rotate-180" : ""}`}
+                      />
+                    </button>
+                    {dataObjectFilter && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDataObjectFilter(null);
+                          setDoDropdownOpen(false);
+                          setDoSearch("");
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm shadow-md hover:border-red-200 hover:bg-red-50 hover:text-red-700 text-gray-600 focus:outline-none"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Reset Graph
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Dropdown panel */}
+                  {doDropdownOpen && (
+                    <div className="w-72 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                      {/* Search input */}
+                      <div className="border-b border-gray-100 p-2">
+                        <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5">
+                          <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <input
+                            type="text"
+                            placeholder="Search data objects…"
+                            value={doSearch}
+                            onChange={(e) => setDoSearch(e.target.value)}
+                            className="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none"
+                            autoFocus
+                          />
+                          {doSearch && (
+                            <button type="button" onClick={() => setDoSearch("")}>
+                              <X className="h-3.5 w-3.5 text-gray-400 hover:text-gray-600" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Data object list */}
+                      <div className="max-h-60 overflow-y-auto">
+                        {filteredDataObjects.length === 0 ? (
+                          <div className="p-3 text-center text-xs text-gray-400">
+                            {availableDataObjects.length === 0
+                              ? "No data objects in current graph."
+                              : `No results for "${doSearch}"`}
+                          </div>
+                        ) : (
+                          filteredDataObjects.map(({ label, edgeCount }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => {
+                                setDataObjectFilter((prev) => (prev === label ? null : label));
+                                setDoDropdownOpen(false);
+                                setDoSearch("");
+                              }}
+                              className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors hover:bg-blue-50 ${
+                                dataObjectFilter === label
+                                  ? "bg-blue-50 font-medium text-blue-700"
+                                  : "text-gray-700"
+                              }`}
+                            >
+                              <span className="truncate">{label}</span>
+                              <span
+                                className={`ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                  dataObjectFilter === label
+                                    ? "bg-blue-100 text-blue-600"
+                                    : "bg-gray-100 text-gray-500"
+                                }`}
+                              >
+                                {edgeCount}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </main>

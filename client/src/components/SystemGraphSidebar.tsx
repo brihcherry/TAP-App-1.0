@@ -28,10 +28,6 @@ interface SystemGraphSidebarProps {
 	onUnlockGraph: () => void;
 	/** Navigate back to the system list */
 	onBack: () => void;
-	/** Label of the currently expanded edge pair (e.g. "System A ↔ System B"), or null */
-	expandedPairLabel?: string | null;
-	/** Called to collapse the expanded pair back to aggregated view */
-	onCollapsePair?: () => void;
 }
 
 export const SystemGraphSidebar = ({
@@ -47,8 +43,6 @@ export const SystemGraphSidebar = ({
 	onLockGraph,
 	onUnlockGraph,
 	onBack,
-	expandedPairLabel,
-	onCollapsePair,
 }: SystemGraphSidebarProps) => {
 	return (
 		<aside className="w-64 shrink-0 border-r border-gray-200 bg-gray-50 p-4 flex flex-col gap-4 overflow-y-auto">
@@ -159,34 +153,6 @@ export const SystemGraphSidebar = ({
 			</div>
 
 			<hr className="border-gray-200" />
-
-			{/* ── Edge detail view (expanded pair) ────────────────────────── */}
-			{expandedPairLabel && (
-				<>
-					<div className="flex flex-col gap-2">
-						<h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-							Edge Detail View
-						</h3>
-						<div className="rounded-lg border border-purple-200 bg-purple-50 p-3">
-							<div className="text-sm font-medium text-purple-900 break-words">
-								{expandedPairLabel}
-							</div>
-							<div className="mt-1 text-xs text-purple-600">
-								Showing individual data object flows
-							</div>
-						</div>
-						<Button
-							variant="outline"
-							className="w-full"
-							onClick={onCollapsePair}
-						>
-							Collapse to Aggregated View
-						</Button>
-					</div>
-
-					<hr className="border-gray-200" />
-				</>
-			)}
 
 			{/* ── Canvas controls ─────────────────────────────────────────── */}
 			<div className="flex flex-col gap-2">

@@ -1,6 +1,7 @@
 // Barrel export for custom components. Import from "@/components" instead of individual files.
 export * from "./CapabilityBubbleGraph";
 export * from "./CapabilityGroupSidebar";
+export * from "./EdgeDetailSidebar";
 export * from "./GraphLegend";
 export * from "./GraphTooltip";
 export * from "./KindBadge";

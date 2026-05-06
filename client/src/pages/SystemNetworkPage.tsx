@@ -12,8 +12,9 @@ import { NetworkGraph } from "@/components/NetworkGraph";
 import { GraphTooltip } from "@/components/GraphTooltip";
 import { GraphLegend } from "@/components/GraphLegend";
 import { SystemGraphSidebar } from "@/components/SystemGraphSidebar";
+import { EdgeDetailSidebar } from "@/components/EdgeDetailSidebar";
 import { computeSubgraph, computeDirectNeighborCounts, canonicalPairKey, type RawNetworkData } from "@/lib/systemSubgraph";
-import type { TooltipData } from "@/types/graph";
+import type { TooltipData, ProcessedEdge } from "@/types/graph";
 
 const TYPE_COLORS: Record<string, string> = {
   System: "rgb(31, 119, 180)",
@@ -61,7 +62,7 @@ export const SystemNetworkPage = () => {
   const [degree, setDegree] = useState(1);
   const [isGraphLocked, setIsGraphLocked] = useState(false);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-  const [expandedPairKey, setExpandedPairKey] = useState<string | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<ProcessedEdge | null>(null);
 
   // ── Fetch (once on mount) ─────────────────────────────────────────────────
   useEffect(() => {
@@ -118,25 +119,25 @@ export const SystemNetworkPage = () => {
   // Swap aggregated edge for per-data-object edges when a pair is expanded
   const displayEdges = useMemo(() => {
     if (!subgraph) return [];
-    if (!expandedPairKey) return subgraph.edges;
-    const exploded = subgraph.perDataObjectEdges.get(expandedPairKey);
-    if (!exploded?.length) return subgraph.edges;
-    return [
-      ...subgraph.edges.filter(
-        (e) => canonicalPairKey(e.sourceId, e.targetId) !== expandedPairKey,
-      ),
-      ...exploded,
-    ];
-  }, [subgraph, expandedPairKey]);
+    return subgraph.edges;
+  }, [subgraph]);
 
-  // Label for the sidebar's Edge Detail View section
-  const expandedPairLabel = useMemo(() => {
-    if (!expandedPairKey || !subgraph) return null;
-    const [a, b] = expandedPairKey.split("||");
-    const la = subgraph.nodes.find((n) => n.id === a)?.label ?? "";
-    const lb = subgraph.nodes.find((n) => n.id === b)?.label ?? "";
-    return `${la} ↔ ${lb}`;
-  }, [expandedPairKey, subgraph]);
+  // Canonical pair key for the selected edge (drives NetworkGraph highlight)
+  const selectedEdgePairKey = useMemo(() => {
+    if (!selectedEdge) return null;
+    return canonicalPairKey(selectedEdge.sourceId, selectedEdge.targetId);
+  }, [selectedEdge]);
+
+  // Labels for the selected edge's two endpoints
+  const selectedEdgeSourceLabel = useMemo(() => {
+    if (!selectedEdge || !subgraph) return "";
+    return subgraph.nodes.find((n) => n.id === selectedEdge.sourceId)?.label ?? "";
+  }, [selectedEdge, subgraph]);
+
+  const selectedEdgeTargetLabel = useMemo(() => {
+    if (!selectedEdge || !subgraph) return "";
+    return subgraph.nodes.find((n) => n.id === selectedEdge.targetId)?.label ?? "";
+  }, [selectedEdge, subgraph]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ export const SystemNetworkPage = () => {
     setDegree(1);
     setIsGraphLocked(false);
     setTooltip(null);
-    setExpandedPairKey(null);
+    setSelectedEdge(null);
   }, []);
 
   const handleBack = useCallback(() => {
@@ -153,27 +154,27 @@ export const SystemNetworkPage = () => {
     setDegree(1);
     setIsGraphLocked(false);
     setTooltip(null);
-    setExpandedPairKey(null);
+    setSelectedEdge(null);
   }, []);
 
   const handleExpand = useCallback(() => {
     setDegree((prev) => prev + 1);
-    setExpandedPairKey(null);
+    setSelectedEdge(null);
   }, []);
 
   const handleDegreeChange = useCallback((newDegree: number) => {
     setDegree(newDegree);
-    setExpandedPairKey(null);
+    setSelectedEdge(null);
   }, []);
 
   const handleEdgeClick = useCallback((sourceId: string, targetId: string) => {
+    if (!subgraph) return;
     const key = canonicalPairKey(sourceId, targetId);
-    setExpandedPairKey((prev) => (prev === key ? null : key));
-  }, []);
-
-  const handleCollapsePair = useCallback(() => {
-    setExpandedPairKey(null);
-  }, []);
+    const edge = subgraph.edges.find(
+      (e) => canonicalPairKey(e.sourceId, e.targetId) === key,
+    ) ?? null;
+    setSelectedEdge((prev) => (prev && canonicalPairKey(prev.sourceId, prev.targetId) === key ? null : edge));
+  }, [subgraph]);
 
   // ── Render: Graph view ────────────────────────────────────────────────────
   if (selectedSystem && subgraph) {
@@ -183,7 +184,7 @@ export const SystemNetworkPage = () => {
         <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-3 flex items-center gap-4">
           <div>
             <h1 className="text-lg font-semibold text-gray-900">
-              {selectedSystem.label}
+              {selectedSystem.label}: What is the network of systems that pass data objects to/from this system?
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
               System Network Graph &middot; {subgraph.nodes.length} nodes &middot; {subgraph.edges.length} edges
@@ -207,8 +208,6 @@ export const SystemNetworkPage = () => {
             onLockGraph={() => setIsGraphLocked(true)}
             onUnlockGraph={() => setIsGraphLocked(false)}
             onBack={handleBack}
-            expandedPairLabel={expandedPairLabel}
-            onCollapsePair={handleCollapsePair}
           />
 
           <main className="flex-1 relative overflow-hidden">
@@ -232,12 +231,22 @@ export const SystemNetworkPage = () => {
                   onEdgeClick={handleEdgeClick}
                   isInteractionLocked={isGraphLocked}
                   curveOffset={0}
+                  selectedEdgePairKey={selectedEdgePairKey}
                 />
                 <GraphLegend entries={subgraph.legend} />
                 <GraphTooltip tooltip={tooltip} />
               </>
             )}
           </main>
+
+          {selectedEdge && (
+            <EdgeDetailSidebar
+              edge={selectedEdge}
+              sourceLabel={selectedEdgeSourceLabel}
+              targetLabel={selectedEdgeTargetLabel}
+              onClose={() => setSelectedEdge(null)}
+            />
+          )}
         </div>
       </div>
     );
@@ -248,9 +257,9 @@ export const SystemNetworkPage = () => {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
-        <h1 className="text-lg font-semibold text-gray-900">System Network Map</h1>
+        <h1 className="text-lg font-semibold text-gray-900">System Network Map: What is the network of systems that pass data objects to/from this system?</h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          Click into each system to view the network of data flow between other systems. 
+          Click into each system to view the network of data flow between other systems.
         </p>
       </header>
 

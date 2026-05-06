@@ -22,6 +22,8 @@ interface NetworkGraphProps {
 	chargeStrength?: number;
 	/** D3 forceLink distance in px. Default: 60. */
 	linkDistance?: number;
+	/** Canonical pair key ("a||b" where a < b) of the edge to highlight as selected. */
+	selectedEdgePairKey?: string | null;
 }
 
 // Force layout parameters (matching legacy force-graph defaults)
@@ -44,6 +46,7 @@ export const NetworkGraph = ({
 	mergeBidirectional = false,
 	chargeStrength = CHARGE_STRENGTH,
 	linkDistance = LINK_DISTANCE,
+	selectedEdgePairKey = null,
 }: NetworkGraphProps) => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
@@ -491,6 +494,43 @@ const cx = mx + px * edgeOffset;
 			});
 		}
 	}, [highlightSet]);
+
+	// Highlight the selected edge (blue stroke) without rebuilding the graph.
+	// Tracks the previous key so only the affected edge is touched on deselect.
+	const prevSelectedEdgePairKeyRef = useRef<string | null>(null);
+	useEffect(() => {
+		const linkGroup = linkGroupRef.current;
+		if (!linkGroup) return;
+
+		const pairKey = (a: string, b: string) => (a < b ? `${a}||${b}` : `${b}||${a}`);
+
+		// Reset the previously selected edge back to default
+		const prev = prevSelectedEdgePairKeyRef.current;
+		if (prev && prev !== selectedEdgePairKey) {
+			linkGroup.each(function (d) {
+				if (pairKey(d.sourceId, d.targetId) === prev) {
+					d3.select(this)
+						.attr("stroke", "#999")
+						.attr("stroke-opacity", 0.6)
+						.attr("stroke-width", 1.5);
+				}
+			});
+		}
+
+		// Apply blue selection stroke to the newly selected edge
+		if (selectedEdgePairKey) {
+			linkGroup.each(function (d) {
+				if (pairKey(d.sourceId, d.targetId) === selectedEdgePairKey) {
+					d3.select(this)
+						.attr("stroke", "rgb(59,130,246)")
+						.attr("stroke-opacity", 1)
+						.attr("stroke-width", 2.5);
+				}
+			});
+		}
+
+		prevSelectedEdgePairKeyRef.current = selectedEdgePairKey ?? null;
+	}, [selectedEdgePairKey]);
 
 	return (
 		<div ref={containerRef} className="w-full h-full">

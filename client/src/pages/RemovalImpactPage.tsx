@@ -24,46 +24,69 @@ const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
 interface SystemEntry {
   uri: string;
   label: string;
-  connectionCount: number;
+}
+
+interface SystemImpactRank {
+  soleProviderCount: number;
+  criticalRelayCount: number;
+  nonCriticalProviderCount: number;
+  totalIsolatedCount: number;
+}
+
+const EMPTY_RANK: SystemImpactRank = {
+  soleProviderCount: 0,
+  criticalRelayCount: 0,
+  nonCriticalProviderCount: 0,
+  totalIsolatedCount: 0,
+};
+
+function rankFromImpactResponse(output: DataFlowImpactReactorResponse | undefined): SystemImpactRank {
+  if (!output?.dataFlowImpacts) return EMPTY_RANK;
+
+  let soleProviderCount = 0;
+  let criticalRelayCount = 0;
+  let nonCriticalProviderCount = 0;
+  let totalIsolatedCount = 0;
+
+  for (const entry of output.dataFlowImpacts) {
+    if (entry.classification === "soleProvider") soleProviderCount += 1;
+    if (entry.classification === "criticalRelay") criticalRelayCount += 1;
+    if (entry.classification === "nonCritical" && entry.role === "provider") {
+      nonCriticalProviderCount += 1;
+    }
+    totalIsolatedCount += entry.isolatedSystems.length;
+  }
+
+  return {
+    soleProviderCount,
+    criticalRelayCount,
+    nonCriticalProviderCount,
+    totalIsolatedCount,
+  };
+}
+
+function compareByCriticality(a: SystemEntry & SystemImpactRank, b: SystemEntry & SystemImpactRank): number {
+  if (b.soleProviderCount !== a.soleProviderCount) {
+    return b.soleProviderCount - a.soleProviderCount;
+  }
+  if (b.criticalRelayCount !== a.criticalRelayCount) {
+    return b.criticalRelayCount - a.criticalRelayCount;
+  }
+  if (b.nonCriticalProviderCount !== a.nonCriticalProviderCount) {
+    return b.nonCriticalProviderCount - a.nonCriticalProviderCount;
+  }
+  if (b.totalIsolatedCount !== a.totalIsolatedCount) {
+    return b.totalIsolatedCount - a.totalIsolatedCount;
+  }
+  return a.label.localeCompare(b.label);
 }
 
 function buildSystemList(raw: RawNetworkData): SystemEntry[] {
-  const interfaceUris = new Set(
-    raw.nodes.filter((n) => n.type === "Interface").map((n) => n.uri),
-  );
-
-  const providerOf = new Map<string, string>();
-  const consumersOf = new Map<string, Set<string>>();
-
-  for (const edge of raw.edges) {
-    if (edge.edgeType === "provide" && interfaceUris.has(edge.targetUri)) {
-      providerOf.set(edge.targetUri, edge.sourceUri);
-    } else if (edge.edgeType === "consume" && interfaceUris.has(edge.sourceUri)) {
-      if (!consumersOf.has(edge.sourceUri)) consumersOf.set(edge.sourceUri, new Set());
-      consumersOf.get(edge.sourceUri)!.add(edge.targetUri);
-    }
-  }
-
-  const connectionCounts = new Map<string, Set<string>>();
-  for (const ifcUri of interfaceUris) {
-    const provider = providerOf.get(ifcUri);
-    const consumers = consumersOf.get(ifcUri) ?? new Set();
-    if (!provider || consumers.size === 0) continue;
-    for (const consumer of consumers) {
-      if (provider === consumer) continue;
-      if (!connectionCounts.has(provider)) connectionCounts.set(provider, new Set());
-      if (!connectionCounts.has(consumer)) connectionCounts.set(consumer, new Set());
-      connectionCounts.get(provider)!.add(consumer);
-      connectionCounts.get(consumer)!.add(provider);
-    }
-  }
-
   return raw.nodes
     .filter((n) => n.type === "System")
     .map((n) => ({
       uri: n.uri,
       label: n.label,
-      connectionCount: connectionCounts.get(n.uri)?.size ?? 0,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
@@ -87,6 +110,8 @@ export const RemovalImpactPage = () => {
   const [systems, setSystems] = useState<SystemEntry[] | null>(null);
   const [isLoadingNetwork, setIsLoadingNetwork] = useState(true);
   const [networkError, setNetworkError] = useState<string | null>(null);
+  const [systemRanks, setSystemRanks] = useState<Record<string, SystemImpactRank>>({});
+  const [isRankingSystems, setIsRankingSystems] = useState(false);
 
   // ── Selection & analysis state ────────────────────────────────────────────
   const [selectedSystem, setSelectedSystem] = useState<SystemEntry | null>(null);
@@ -123,7 +148,7 @@ export const RemovalImpactPage = () => {
           if (fromSidebar.current) {
             const { systemUri, systemLabel } = fromSidebar.current;
             const match = list.find((s) => s.uri === systemUri);
-            setSelectedSystem(match ?? { uri: systemUri, label: systemLabel, connectionCount: 0 });
+            setSelectedSystem(match ?? { uri: systemUri, label: systemLabel });
             fromSidebar.current = null;
           }
         } else {
@@ -145,8 +170,66 @@ export const RemovalImpactPage = () => {
   const filtered = useMemo(() => {
     if (!systems) return [];
     const q = search.trim().toLowerCase();
-    return systems.filter((s) => q === "" || s.label.toLowerCase().includes(q));
-  }, [systems, search]);
+
+    return systems
+      .map((s) => ({
+        ...s,
+        ...(systemRanks[s.uri] ?? EMPTY_RANK),
+      }))
+      .filter((s) => q === "" || s.label.toLowerCase().includes(q))
+      .sort(compareByCriticality);
+  }, [systems, search, systemRanks]);
+
+  // ── Rank systems by criticality (SP > CR > NP) ──────────────────────────
+  useEffect(() => {
+    if (!insightId || !systems || systems.length === 0) return;
+    let cancelled = false;
+
+    setIsRankingSystems(true);
+
+    const runRanking = async () => {
+      const ranks: Record<string, SystemImpactRank> = {};
+      const batchSize = 8;
+
+      for (let i = 0; i < systems.length; i += batchSize) {
+        if (cancelled) return;
+
+        const batch = systems.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (sys) => {
+            try {
+              const pixel = `GetDataFlowImpact(database=["${DATABASE_ID}"], system=["${sys.uri}"]);`;
+              const response = await runPixel(pixel, insightId);
+              if (response.errors.length > 0) {
+                return { uri: sys.uri, rank: EMPTY_RANK };
+              }
+              const output = response.pixelReturn[0]?.output as DataFlowImpactReactorResponse | undefined;
+              return { uri: sys.uri, rank: rankFromImpactResponse(output) };
+            } catch {
+              return { uri: sys.uri, rank: EMPTY_RANK };
+            }
+          }),
+        );
+
+        for (const item of batchResults) {
+          ranks[item.uri] = item.rank;
+        }
+      }
+
+      if (!cancelled) {
+        setSystemRanks(ranks);
+        setIsRankingSystems(false);
+      }
+    };
+
+    runRanking().catch(() => {
+      if (!cancelled) setIsRankingSystems(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [insightId, systems]);
 
   // ── Run analysis when a system is selected ────────────────────────────────
   useEffect(() => {
@@ -224,7 +307,7 @@ export const RemovalImpactPage = () => {
               Data Flow Impact: {selectedSystem.label}
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
-              Simulated removal analysis &middot; {selectedSystem.connectionCount} connection{selectedSystem.connectionCount !== 1 ? "s" : ""}
+              Simulated removal analysis
             </p>
           </div>
           <button
@@ -443,6 +526,10 @@ export const RemovalImpactPage = () => {
               onChange={(e) => setSearch(e.target.value)}
               className="w-56 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
+            <p className="mt-2 text-xs text-gray-500">
+              Ordered by criticality: highest sole provider, then critical relay, then non-critical provider counts.
+              {isRankingSystems && " Calculating rankings..."}
+            </p>
           </div>
 
           {/* List */}
@@ -468,9 +555,17 @@ export const RemovalImpactPage = () => {
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-gray-800 group-hover:text-blue-800">
                         {entry.label}
                       </span>
-                      <span className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-600 group-hover:bg-blue-100 group-hover:text-blue-700">
-                        {entry.connectionCount}
-                      </span>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="flex-shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                          SP {entry.soleProviderCount}
+                        </span>
+                        <span className="flex-shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          CR {entry.criticalRelayCount}
+                        </span>
+                        <span className="flex-shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
+                          NP {entry.nonCriticalProviderCount}
+                        </span>
+                      </div>
                     </button>
                   </li>
                 ))}

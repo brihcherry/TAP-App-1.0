@@ -4,7 +4,8 @@
 //
 // Data comes from GetCapabilityGroups (grouping) and GetSystemDetails (details).
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
 import { CapabilityBubbleGraph } from "@/components/CapabilityBubbleGraph";
@@ -14,6 +15,12 @@ import type { CapabilityGroup, CapabilityGroupsResponse, SystemDetails } from "@
 
 export const SystemInspectionPage = () => {
   const { insightId } = useInsight();
+  const location = useLocation();
+
+  // URI of the group to restore after navigating back from removal impact
+  const restoreGroupUriRef = useRef<string | null>(
+    (location.state as { restoreGroup?: { uri: string } } | null)?.restoreGroup?.uri ?? null
+  );
 
   // ── Capability groups data ────────────────────────────────────────────────
   const [capabilityGroups, setCapabilityGroups] = useState<CapabilityGroup[]>([]);
@@ -47,6 +54,14 @@ export const SystemInspectionPage = () => {
         const output = response.pixelReturn[0]?.output as CapabilityGroupsResponse | undefined;
         if (output?.capabilityGroups) {
           setCapabilityGroups(output.capabilityGroups);
+          // Restore zoomed group if navigating back from removal impact
+          if (restoreGroupUriRef.current) {
+            const groupToRestore = output.capabilityGroups.find(
+              (cg) => cg.uri === restoreGroupUriRef.current
+            );
+            if (groupToRestore) setSelectedGroup(groupToRestore);
+            restoreGroupUriRef.current = null;
+          }
         } else {
           setLoadError("Unexpected response format from server.");
         }
@@ -136,7 +151,7 @@ export const SystemInspectionPage = () => {
       <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">System Inspector</h1>
+            <h1 className="text-lg font-semibold text-gray-900">Capability Group Overview: For each capability group, which systems have the most overlap with other systems?</h1>
             <p className="mt-0.5 text-sm text-gray-500">
               {isLoading
                 ? "Loading capability groups…"

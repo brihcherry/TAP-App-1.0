@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { SemossBlueLogo } from "@/assets";
 
 const navigationLinks: { path: string; text: string }[] = [
-	{ path: "/", text: "System Inspector" },
+	{ path: "/", text: "Capability Group Overview" },
 	{ path: "/system-network", text: "System Network Map" },
 	{ path: "/removal-impact", text: "Removal Impact" },
 ];

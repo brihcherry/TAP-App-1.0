@@ -153,6 +153,7 @@ ActiveSystem  --[Provide]-->  SystemInterface  --[Consume]-->  ActiveSystem
 | **Payload** | A SystemInterface carries a DataObject |
 | **ActiveSystem** | A system that is currently operational (RDF subclass of System) |
 | **CRM property** | Metadata on a Provide edge: `C` = Creator, `M` = Modifier, `R` = Reference. Only C and M are treated as authoritative data originators |
+| **Phase / LifeCycle** | A `SystemInterface` may have a `Phase` relation pointing to a `LifeCycle` node. Only interfaces with lifecycle `Supported` are included in analysis. Interfaces with `Retired_(Not_Supported)` are excluded. |
 
 ---
 
@@ -183,6 +184,7 @@ SELECT DISTINCT ?Data WHERE {
 ```sparql
 SELECT DISTINCT ?Data WHERE {
   ?icd        rdf:type           SystemInterface .
+  ?icd        Phase              LifeCycle/Supported .
   ?downstream rdfs:subPropertyOf Consume .
   ?carries    rdfs:subPropertyOf Payload .
   ?icd        ?downstream        <systemUri> .
@@ -203,6 +205,7 @@ SELECT DISTINCT ?Data WHERE {
 ```sparql
 SELECT DISTINCT ?Data WHERE {
   ?icd        rdf:type           SystemInterface .
+  ?icd        Phase              LifeCycle/Supported .
   ?upstream   rdfs:subPropertyOf Provide .
   ?carries    rdfs:subPropertyOf Payload .
   <systemUri> ?upstream          ?icd .
@@ -248,6 +251,7 @@ SELECT DISTINCT ?System2 ?System3 ?Data WHERE {
   ?System2    rdf:type           ActiveSystem .
   ?System3    rdf:type           ActiveSystem .
   ?icd        rdf:type           SystemInterface .
+  ?icd        Phase              LifeCycle/Supported .
   ?upstream   rdfs:subPropertyOf Provide .
   ?downstream rdfs:subPropertyOf Consume .
   ?carries    rdfs:subPropertyOf Payload .
@@ -384,4 +388,4 @@ User clicks a system
 | **CRM filter** | Only `C` (Creator) and `M` (Modifier) Provide edges count as authoritative origins. `R` (Reference) Provide edges do not make a system a provider for isolation purposes. |
 | **ICD pattern required** | System-to-system data flow is recognized only when mediated by a `SystemInterface` node with a `Payload` edge to a `DataObject`. |
 | **Directed graph** | BFS in Q5 follows directed edges only. A system downstream of the removed system with no alternative upstream path becomes isolated. |
-| **No interface lifecycle filtering** | Q4 does not filter SystemInterfaces by lifecycle status. Retired interfaces are included alongside supported ones in the flow graph. |
+| **Supported interfaces only** | Q2, Q2.5, and Q4 filter `SystemInterface` nodes to those with `Phase → LifeCycle/Supported`. Retired interfaces (`Retired_(Not_Supported)`) are excluded from all graph traversals — they do not contribute edges, consumed data objects, or flow paths. |

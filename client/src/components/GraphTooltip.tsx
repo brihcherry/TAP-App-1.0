@@ -8,15 +8,14 @@
 //   │ ▸ System A → System B               │
 //   │   • DataObject 1                    │
 //   │   • DataObject 2   (+N more)        │
-//   │   Interface 1  ↳ DO1, DO2           │
-//   │   (+N more interfaces)              │
+//   │   (only data objects shown)         │
 //   ├─────────────────────────────────────┤
 //   │ ▸ System B → System A               │
 //   │   No data flow   (if one-way)       │
 //   └─────────────────────────────────────┘
 //
-// Truncation: show at most MAX_DATA_OBJECTS data objects and MAX_INTERFACES
-// interface records per direction section, with "+N more" indicators.
+// Truncation: show at most MAX_DATA_OBJECTS data objects per direction section,
+// with "+N more" indicators.
 
 import type { TooltipData, DirectionBucket } from "@/types/graph";
 
@@ -25,7 +24,6 @@ interface GraphTooltipProps {
 }
 
 const MAX_DATA_OBJECTS = 4;
-const MAX_INTERFACES   = 3;
 
 /** Renders one direction lane (either forward or reverse). */
 function DirectionSection({
@@ -39,8 +37,6 @@ function DirectionSection({
 }) {
 	const visibleDOs   = bucket.dataObjects.slice(0, MAX_DATA_OBJECTS);
 	const hiddenDOs    = bucket.dataObjects.length - visibleDOs.length;
-	const visibleIfcs  = bucket.interfaces.slice(0, MAX_INTERFACES);
-	const hiddenIfcs   = bucket.interfaces.length - visibleIfcs.length;
 
 	return (
 		<div className="mt-2 pt-2 border-t border-gray-700">
@@ -80,32 +76,6 @@ function DirectionSection({
 						</div>
 					)}
 
-					{/* Per-interface records */}
-					{visibleIfcs.length > 0 && (
-						<div className="mt-1.5">
-							<div className="text-gray-400 text-[10px] uppercase tracking-wide">
-								Interfaces
-							</div>
-							{visibleIfcs.map((ifc, i) => (
-								<div key={i} className="mt-0.5">
-									<div className="text-gray-300 text-[10px] truncate max-w-[200px]">
-										{ifc.label || "Unnamed interface"}
-									</div>
-									{ifc.dataObjects.length > 0 && (
-										<div className="text-gray-500 text-[10px] ml-2 truncate max-w-[190px]">
-											↳ {ifc.dataObjects.slice(0, 3).join(", ")}
-											{ifc.dataObjects.length > 3 && ` +${ifc.dataObjects.length - 3}`}
-										</div>
-									)}
-								</div>
-							))}
-							{hiddenIfcs > 0 && (
-								<div className="text-gray-400 text-[10px] mt-0.5">
-									+{hiddenIfcs} more interface{hiddenIfcs !== 1 ? "s" : ""}
-								</div>
-							)}
-						</div>
-					)}
 				</>
 			)}
 		</div>

@@ -54,6 +54,8 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
       "http://www.w3.org/2000/01/rdf-schema#subPropertyOf";
   private static final String BASE =
       "http://semoss.org/ontologies";
+  private static final String LIFECYCLE_SUPPORTED =
+      "http://health.mil/ontologies/Concept/LifeCycle/Supported";
 
   public GetDataFlowImpactReactor() {
     this.keysToGet = new String[] { DATABASE_KEY, SYSTEM_KEY };
@@ -146,6 +148,7 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     String query =
         "SELECT DISTINCT ?Data WHERE {"
         + " ?icd <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
+        + " ?icd <" + BASE + "/Relation/Phase> <" + LIFECYCLE_SUPPORTED + "> ."
         + " ?downstream <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Consume> ."
         + " ?carries <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Payload> ."
         + " ?icd ?downstream <" + systemUri + "> ."
@@ -168,6 +171,7 @@ private Set<String> fetchProvidedViaInterfaceDataObjects(QueryExecutor executor,
     String query =
         "SELECT DISTINCT ?Data WHERE {"
         + " ?icd <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
+        + " ?icd <" + BASE + "/Relation/Phase> <" + LIFECYCLE_SUPPORTED + "> ."
         + " ?upstream <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Provide> ."
         + " ?carries <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Payload> ."
         + " <" + systemUri + "> ?upstream ?icd ."
@@ -240,6 +244,7 @@ private Set<String> fetchProvidedViaInterfaceDataObjects(QueryExecutor executor,
         + " ?System2 <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
         + " ?System3 <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
         + " ?icd <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
+        + " ?icd <" + BASE + "/Relation/Phase> <" + LIFECYCLE_SUPPORTED + "> ."
         + " ?upstream <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Provide> ."
         + " ?downstream <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Consume> ."
         + " ?carries <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Payload> ."

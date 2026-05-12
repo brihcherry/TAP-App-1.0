@@ -212,6 +212,7 @@ export const NetworkGraph = ({
 			.attr("cursor", "pointer")
 			.on("click", (event: MouseEvent, d: ProcessedEdge) => {
 				event.stopPropagation();
+				onTooltipChangeRef.current(null);
 				onEdgeClick?.(d.sourceId, d.targetId);
 			});
 

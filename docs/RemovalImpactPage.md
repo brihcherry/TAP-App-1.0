@@ -1,18 +1,4 @@
-# TAP App V1 — Developer Documentation
-
-This README is the **living document** for all page-level documentation in the TAP App V1. Each page has its own section below. As new pages are built or updated, add their documentation here.
-
-> **Contributing:** Add a new `---`-delimited section per page following the same structure (Purpose → What the Page Shows → Frontend Architecture → Backend → Flow Summary → Constraints). Keep the Table of Contents up to date.
-
----
-
-## Table of Contents
-
-1. [Data Flow Impact Analyzer (System Removal Impact Page)](#1-data-flow-impact-analyzer--system-removal-impact-page)
-
----
-
-# 1. Data Flow Impact Analyzer — System Removal Impact Page
+# Data Flow Impact Analyzer — System Removal Impact Page
 
 ## Purpose
 
@@ -139,7 +125,7 @@ After the reactor responds, `computeDataFlowImpact()` in `src/lib/dataFlowImpact
 **Pixel call syntax:**
 ```
 GetDataFlowImpact(
-  database=["<DatabaseEngineID>"],
+  database=["133db94b-4371-4763-bff9-edf7e5ed021b"],
   system=["http://health.mil/ontologies/Concept/System/<SystemName>"]
 );
 ```
@@ -207,7 +193,7 @@ SELECT DISTINCT ?Data WHERE {
 }
 ```
 
-**Result:** Set of DataObject URIs arriving at this system from upstream providers via supported interfaces only.
+**Result:** Set of DataObject URIs arriving at this system from upstream providers.
 
 ---
 
@@ -257,7 +243,7 @@ SELECT DISTINCT ?Data ?System WHERE {
 
 ### Q4 — Directed ICD Flow Graph (Batched)
 
-**Purpose:** For every DataObject in `allDataObjects`, build the complete directed system-to-system flow graph using the ICD pattern. Only **supported** interfaces form edges in this graph — retired interfaces are excluded and do not create traversal paths.
+**Purpose:** For every DataObject in `allDataObjects`, build the complete directed system-to-system flow graph using the ICD pattern.
 
 **Pattern (batched):**
 ```sparql
@@ -276,7 +262,7 @@ SELECT DISTINCT ?System2 ?System3 ?Data WHERE {
 }
 ```
 
-Each result row `(System2, System3, Data)` means: *System2 sends Data to System3 through a supported SystemInterface.*
+Each result row `(System2, System3, Data)` means: *System2 sends Data to System3 through a SystemInterface.*
 
 **Result:** Map of `DataObjectUri → List<[System2Uri, System3Uri]>`. Both endpoints must be ActiveSystems.
 
@@ -374,10 +360,10 @@ User clicks a system
     └── GetDataFlowImpact(system=[...])
               │
               ├── Q1:   Direct Provide DataObjects     (CRM = C or M)
-              ├── Q2:   Consumed DataObjects            (supported ICD Consume only)
-              ├── Q2.5: Interface-Provided DataObjects  (supported ICD Provide only)
+              ├── Q2:   Consumed DataObjects            (ICD Consume pattern)
+              ├── Q2.5: Interface-Provided DataObjects  (ICD Provide pattern)
               ├── Q3:   CRM providers per DataObject    (batched, ActiveSystem only)
-              ├── Q4:   Full ICD flow graph             (batched, ActiveSystem + Supported interfaces only)
+              ├── Q4:   Full ICD flow graph             (batched, ActiveSystem only)
               └── Q5:   BFS isolation simulation        (in-memory, per DataObject)
                         │
                         └── JSON response
@@ -403,4 +389,3 @@ User clicks a system
 | **ICD pattern required** | System-to-system data flow is recognized only when mediated by a `SystemInterface` node with a `Payload` edge to a `DataObject`. |
 | **Directed graph** | BFS in Q5 follows directed edges only. A system downstream of the removed system with no alternative upstream path becomes isolated. |
 | **Supported interfaces only** | Q2, Q2.5, and Q4 filter `SystemInterface` nodes to those with `Phase → LifeCycle/Supported`. Retired interfaces (`Retired_(Not_Supported)`) are excluded from all graph traversals — they do not contribute edges, consumed data objects, or flow paths. |
-

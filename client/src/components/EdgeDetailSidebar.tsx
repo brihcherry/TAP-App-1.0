@@ -57,33 +57,6 @@ function DirectionSection({
 							</ul>
 						</div>
 					)}
-
-					{/* Interfaces */}
-					{bucket.interfaces.length > 0 && (
-						<div>
-							<p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
-								Interfaces ({bucket.interfaces.length})
-							</p>
-							<ul className="space-y-2">
-								{bucket.interfaces.map((ifc, i) => (
-									<li key={i} className="text-xs">
-										<div className="font-medium text-gray-700">
-											{ifc.label || "Unnamed interface"}
-										</div>
-										{ifc.dataObjects.length > 0 && (
-											<ul className="ml-3 mt-0.5 space-y-0.5">
-												{ifc.dataObjects.map((obj) => (
-													<li key={obj} className="text-[11px] text-gray-500">
-														↳ {obj}
-													</li>
-												))}
-											</ul>
-										)}
-									</li>
-								))}
-							</ul>
-						</div>
-					)}
 				</>
 			)}
 		</div>

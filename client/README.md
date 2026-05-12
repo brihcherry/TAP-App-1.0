@@ -49,7 +49,7 @@ client/
 ## Key Patterns
 
 - **SDK hook**: `useInsight()` from `@semoss/sdk/react` provides `actions.run()`, `actions.sendMCPResponseToPlayground()`, `isInitialized`, and `tool`
-- **Calling reactors**: `actions.run('ReactorName(param=value)')` — drop the "Reactor" suffix
+- **Calling reactors**: `actions.run('GetSystemNetwork(database=["db-id"])')` — drop the "Reactor" suffix
 - **Calling Python MCP tools**: `actions.run('RunMCPTool(tool=["tool_name"], param=...)')`
 - **Sending results to Playground**: `actions.sendMCPResponseToPlayground(response, status, executedParams)`
 - **Escaping user input**: Always use `JSON.stringify()` when interpolating into Pixel commands

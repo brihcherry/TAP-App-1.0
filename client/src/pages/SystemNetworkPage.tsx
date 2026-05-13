@@ -32,16 +32,23 @@ interface NetworkEntry {
   connectionCount: number;
 }
 
-function buildEntries(raw: RawNetworkData): NetworkEntry[] {
-  const counts = computeDirectNeighborCounts(raw);
+interface ActiveSystemEntry {
+  uri: string;
+  label: string;
+}
 
-  return raw.nodes
-    .filter((n) => n.type === "System")
-    .map((n) => ({
-      uri: n.uri,
-      label: n.label,
+function buildEntries(
+  activeSystems: ActiveSystemEntry[],
+  raw: RawNetworkData | null,
+): NetworkEntry[] {
+  const counts = raw ? computeDirectNeighborCounts(raw) : new Map<string, number>();
+
+  return activeSystems
+    .map((s) => ({
+      uri: s.uri,
+      label: s.label,
       type: "System" as const,
-      connectionCount: counts.get(n.uri) ?? 0,
+      connectionCount: counts.get(s.uri) ?? 0,
     }))
     .sort((a, b) => b.connectionCount - a.connectionCount);
 }
@@ -92,32 +99,48 @@ export const SystemNetworkPage = () => {
     setIsLoading(true);
     setError(null);
 
-    runPixel(`GetSystemNetwork();`, insightId)
-      .then((response) => {
+    Promise.all([
+      runPixel(`GetActiveSystems();`, insightId),
+      runPixel(`GetSystemNetwork();`, insightId),
+    ])
+      .then(([activeRes, networkRes]) => {
         if (cancelled) return;
-        if (response.errors.length > 0) {
-          setError(response.errors.join(", "));
+
+        // Parse active systems list
+        if (activeRes.errors.length > 0) {
+          setError(activeRes.errors.join(", "));
           return;
         }
-        const output = response.pixelReturn[0]?.output as RawNetworkData;
-        if (output?.nodes && output?.edges) {
-          const built = buildEntries(output);
-          setRawData(output);
-          setEntries(built);
-          // Auto-select system if navigated here from the capability group sidebar
-          if (fromSidebar.current) {
-            const { systemUri, systemLabel } = fromSidebar.current;
-            const match = built.find((e) => e.uri === systemUri);
-            setSelectedSystem(match ?? { uri: systemUri, label: systemLabel, type: "System", connectionCount: 0 });
-            fromSidebar.current = null;
+        const activeOutput = activeRes.pixelReturn[0]?.output as { systems?: ActiveSystemEntry[] };
+        if (!activeOutput?.systems) {
+          setError("Unexpected response format from GetActiveSystems.");
+          return;
+        }
+
+        // Parse network graph data
+        let networkData: RawNetworkData | null = null;
+        if (networkRes.errors.length === 0) {
+          const netOutput = networkRes.pixelReturn[0]?.output as RawNetworkData;
+          if (netOutput?.nodes && netOutput?.edges) {
+            networkData = netOutput;
           }
-        } else {
-          setError("Unexpected response format from server.");
+        }
+
+        setRawData(networkData);
+        const built = buildEntries(activeOutput.systems, networkData);
+        setEntries(built);
+
+        // Auto-select system if navigated here from the capability group sidebar
+        if (fromSidebar.current) {
+          const { systemUri, systemLabel } = fromSidebar.current;
+          const match = built.find((e) => e.uri === systemUri);
+          setSelectedSystem(match ?? { uri: systemUri, label: systemLabel, type: "System", connectionCount: 0 });
+          fromSidebar.current = null;
         }
       })
       .catch((err) => {
         if (!cancelled)
-          setError(err instanceof Error ? err.message : "Failed to load network.");
+          setError(err instanceof Error ? err.message : "Failed to load data.");
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -135,8 +158,17 @@ export const SystemNetworkPage = () => {
 
   // ── Subgraph computation (only when a system is selected) ─────────────────
   const subgraph = useMemo(() => {
-    if (!rawData || !selectedSystem) return null;
-    return computeSubgraph(rawData, selectedSystem.uri, degree);
+    if (!selectedSystem) return null;
+    if (!rawData) {
+      // No network data yet — show isolated node
+      return computeSubgraph(
+        { nodes: [], edges: [] },
+        selectedSystem.uri,
+        degree,
+        selectedSystem.label,
+      );
+    }
+    return computeSubgraph(rawData, selectedSystem.uri, degree, selectedSystem.label);
   }, [rawData, selectedSystem, degree]);
 
   const canExpand = useMemo(() => {
@@ -242,7 +274,8 @@ export const SystemNetworkPage = () => {
     // If we came from the capability group sidebar, return to the bubble graph with the group restored
     if (location.state && (location.state as { systemUri?: string }).systemUri) {
       const returnGroup = (location.state as { returnGroup?: { uri: string; label: string } }).returnGroup;
-      navigate("/", { state: returnGroup ? { restoreGroup: returnGroup } : undefined });
+      const viewMode = (location.state as { viewMode?: string }).viewMode;
+      navigate("/", { state: { ...(returnGroup ? { restoreGroup: returnGroup } : {}), ...(viewMode ? { viewMode } : {}) } });
       return;
     }
     setSelectedSystem(null);

@@ -81,12 +81,16 @@ function compareByCriticality(a: SystemEntry & SystemImpactRank, b: SystemEntry 
   return a.label.localeCompare(b.label);
 }
 
-function buildSystemList(raw: RawNetworkData): SystemEntry[] {
-  return raw.nodes
-    .filter((n) => n.type === "System")
-    .map((n) => ({
-      uri: n.uri,
-      label: n.label,
+interface ActiveSystemEntry {
+  uri: string;
+  label: string;
+}
+
+function buildSystemList(activeSystems: ActiveSystemEntry[]): SystemEntry[] {
+  return activeSystems
+    .map((s) => ({
+      uri: s.uri,
+      label: s.label,
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
@@ -132,32 +136,46 @@ export const RemovalImpactPage = () => {
     setIsLoadingNetwork(true);
     setNetworkError(null);
 
-    runPixel(`GetSystemNetwork(database=["${DATABASE_ID}"]);`, insightId)
-      .then((response) => {
+    Promise.all([
+      runPixel(`GetActiveSystems();`, insightId),
+      runPixel(`GetSystemNetwork(database=["${DATABASE_ID}"]);`, insightId),
+    ])
+      .then(([activeRes, networkRes]) => {
         if (cancelled) return;
-        if (response.errors.length > 0) {
-          setNetworkError(response.errors.join(", "));
+
+        // Parse active systems list
+        if (activeRes.errors.length > 0) {
+          setNetworkError(activeRes.errors.join(", "));
           return;
         }
-        const output = response.pixelReturn[0]?.output as RawNetworkData;
-        if (output?.nodes && output?.edges) {
-          setRawData(output);
-          const list = buildSystemList(output);
-          setSystems(list);
-          // Auto-select if we arrived here from the sidebar
-          if (fromSidebar.current) {
-            const { systemUri, systemLabel } = fromSidebar.current;
-            const match = list.find((s) => s.uri === systemUri);
-            setSelectedSystem(match ?? { uri: systemUri, label: systemLabel });
-            fromSidebar.current = null;
+        const activeOutput = activeRes.pixelReturn[0]?.output as { systems?: ActiveSystemEntry[] };
+        if (!activeOutput?.systems) {
+          setNetworkError("Unexpected response format from GetActiveSystems.");
+          return;
+        }
+
+        // Parse network graph data
+        if (networkRes.errors.length === 0) {
+          const netOutput = networkRes.pixelReturn[0]?.output as RawNetworkData;
+          if (netOutput?.nodes && netOutput?.edges) {
+            setRawData(netOutput);
           }
-        } else {
-          setNetworkError("Unexpected response format from server.");
+        }
+
+        const list = buildSystemList(activeOutput.systems);
+        setSystems(list);
+
+        // Auto-select if we arrived here from the sidebar
+        if (fromSidebar.current) {
+          const { systemUri, systemLabel } = fromSidebar.current;
+          const match = list.find((s) => s.uri === systemUri);
+          setSelectedSystem(match ?? { uri: systemUri, label: systemLabel });
+          fromSidebar.current = null;
         }
       })
       .catch((err) => {
         if (!cancelled)
-          setNetworkError(err instanceof Error ? err.message : "Failed to load network.");
+          setNetworkError(err instanceof Error ? err.message : "Failed to load data.");
       })
       .finally(() => {
         if (!cancelled) setIsLoadingNetwork(false);
@@ -278,7 +296,8 @@ export const RemovalImpactPage = () => {
     // If we came from the sidebar, navigate back to home and restore the group state
     if (location.state && (location.state as { systemUri?: string }).systemUri) {
       const returnGroup = (location.state as { returnGroup?: { uri: string; label: string } }).returnGroup;
-      navigate("/", { state: returnGroup ? { restoreGroup: returnGroup } : undefined });
+      const viewMode = (location.state as { viewMode?: string }).viewMode;
+      navigate("/", { state: { ...(returnGroup ? { restoreGroup: returnGroup } : {}), ...(viewMode ? { viewMode } : {}) } });
       return;
     }
     setSelectedSystem(null);

@@ -24,11 +24,13 @@ const DEFAULT_WIDTH = 360;
 interface CapabilityGroupSidebarProps {
 	group: CapabilityGroup;
 	onClose: () => void;
+	/** Current view mode so navigation back restores the correct toggle state. */
+	viewMode?: "capabilityGroup" | "capability";
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSidebarProps) => {
+export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityGroupSidebarProps) => {
 	const { insightId } = useInsight();
 	const navigate = useNavigate();
 
@@ -243,8 +245,7 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 											state: {
 												systemUri: sys.systemUri,
 												systemLabel: sys.systemLabel,
-												returnGroup: { uri: group.uri, label: group.label },
-											},
+												returnGroup: { uri: group.uri, label: group.label },											viewMode,											},
 										});
 									}}
 									className="inline-flex items-center gap-1 rounded-md bg-gray-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-gray-700 active:bg-gray-800"
@@ -259,8 +260,7 @@ export const CapabilityGroupSidebar = ({ group, onClose }: CapabilityGroupSideba
 											state: {
 												systemUri: sys.systemUri,
 												systemLabel: sys.systemLabel,
-												returnGroup: { uri: group.uri, label: group.label },
-											},
+												returnGroup: { uri: group.uri, label: group.label },											viewMode,											},
 										});
 									}}
 									className="inline-flex items-center gap-1 rounded-md bg-blue-400 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800"

@@ -16,20 +16,24 @@ import util.ProjectProperties;
 import util.QueryExecutor;
 
 /**
- * Returns all capability groups from the TAP_Core_Data RDF database, each with the
- * list of systems that support them.
+ * Returns all capability groups (or capabilities) from the TAP_Core_Data RDF database,
+ * each with the list of systems that support them.
  *
  * <p>Used to populate the zoomable bubble chart on the System Inspection page, where
- * each bubble cluster represents a capability group and each inner bubble is a system.
+ * each bubble cluster represents a capability group (or capability) and each inner
+ * bubble is a system.
  *
  * <p>Pixel call:
  * <pre>
- *   GetCapabilityGroups(database=["133db94b-4371-4763-bff9-edf7e5ed021b"]);
+ *   GetCapabilityGroups();                          // defaults to capabilityGroup mode
+ *   GetCapabilityGroups(mode=["capabilityGroup"]);  // explicit capabilityGroup mode
+ *   GetCapabilityGroups(mode=["capability"]);       // capability mode
  * </pre>
  *
  * <p>Output:
  * <pre>
  *   {
+ *     "mode": "capabilityGroup",
  *     "capabilityGroups": [
  *       {
  *         "uri": "http://semoss.org/ontologies/Concept/CapabilityGroup/Personnel_Services",
@@ -54,34 +58,54 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
       "http://semoss.org/ontologies";
 
   public GetCapabilityGroupsReactor() {
-    this.keysToGet = new String[] {};
-    this.keyRequired = new int[] {};
+    this.keysToGet = new String[] {"mode"};
+    this.keyRequired = new int[] {0};
   }
 
   @Override
   protected NounMetadata doExecute() {
     organizeKeys();
     String engineId = ProjectProperties.getInstance().getDatabaseId();
-    LOGGER.info("GetCapabilityGroups: engine=" + engineId);
+
+    // Determine mode: "capabilityGroup" (default) or "capability"
+    String mode = "capabilityGroup";
+    String modeParam = this.keyValue.containsKey("mode")
+        ? this.keyValue.get("mode").trim()
+        : "";
+    if ("capability".equalsIgnoreCase(modeParam)) {
+      mode = "capability";
+    }
+
+    LOGGER.info("GetCapabilityGroups: engine=" + engineId + " mode=" + mode);
 
     QueryExecutor executor = new QueryExecutor(engineId);
 
-    // Fetch all (CapabilityGroup, System) pairs where the system supports the group.
-    // Each triple pattern is wrapped in its own {} group to match the SPARQL conventions
-    // used by the other working queries on this engine.
+    // Build the SPARQL query based on mode.
+    // capabilityGroup: System Supports CapabilityGroup
+    // capability: System Supports Capability
+    String conceptType;
+    String groupVar;
+    if ("capability".equals(mode)) {
+      conceptType = BASE + "/Concept/Capability";
+      groupVar = "Capability";
+    } else {
+      conceptType = BASE + "/Concept/CapabilityGroup";
+      groupVar = "CapabilityGroup";
+    }
+
     String query =
-        "SELECT DISTINCT ?CapabilityGroup ?System WHERE {"
-        + "{?CapabilityGroup <" + RDF_TYPE + "> <" + BASE + "/Concept/CapabilityGroup>}"
+        "SELECT DISTINCT ?" + groupVar + " ?System WHERE {"
+        + "{?" + groupVar + " <" + RDF_TYPE + "> <" + conceptType + ">}"
         + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
-        + "{?System <" + BASE + "/Relation/Supports> ?CapabilityGroup}"
-        + "} ORDER BY ?CapabilityGroup ?System";
+        + "{?System <" + BASE + "/Relation/Supports> ?" + groupVar + "}"
+        + "} ORDER BY ?" + groupVar + " ?System";
 
     List<Map<String, String>> rows = executor.executeSelect(query);
 
-    // Group systems under their capability group URI; LinkedHashMap preserves ORDER BY order.
+    // Group systems under their group URI; LinkedHashMap preserves ORDER BY order.
     Map<String, Map<String, Object>> groupMap = new LinkedHashMap<>();
     for (Map<String, String> row : rows) {
-      String cgUri = row.get("CapabilityGroup");
+      String cgUri = row.get(groupVar);
       String sysUri = row.get("System");
       if (cgUri == null || sysUri == null) continue;
 
@@ -105,9 +129,10 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
     List<Map<String, Object>> capabilityGroups = new ArrayList<>(groupMap.values());
 
     Map<String, Object> result = new HashMap<>();
+    result.put("mode", mode);
     result.put("capabilityGroups", capabilityGroups);
 
-    LOGGER.info("GetCapabilityGroups: found " + capabilityGroups.size() + " groups");
+    LOGGER.info("GetCapabilityGroups: found " + capabilityGroups.size() + " groups (mode=" + mode + ")");
     return new NounMetadata(result, PixelDataType.MAP);
   }
 
@@ -119,12 +144,17 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
 
   @Override
   public String getReactorDescription() {
-    return "Returns all capability groups from the RDF database, each with the systems that "
-        + "support them. Used to populate the bubble chart on the System Inspection page.";
+    return "Returns all capability groups (or capabilities, depending on mode) from the RDF "
+        + "database, each with the systems that support them. Used to populate the bubble chart "
+        + "on the System Inspection page. Pass mode=[\"capability\"] to group by individual "
+        + "capabilities instead of capability groups.";
   }
 
   @Override
   public String getDescriptionForKey(String key) {
+    if ("mode".equals(key)) {
+      return "Grouping mode: \"capabilityGroup\" (default) or \"capability\".";
+    }
     return null;
   }
 }

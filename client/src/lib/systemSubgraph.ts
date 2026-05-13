@@ -250,20 +250,42 @@ export function computeMaxDegree(raw: RawNetworkData, systemUri: string): number
  * pair (one per system pair, not one per direction) with two DirectionBuckets
  * whose data objects come from raw "carries" edges — not label parsing.
  *
- * @param raw       Full network data from GetSystemNetworkReactor
- * @param systemUri URI of the selected system (center node)
- * @param degree    Number of system-hops to include (≥1)
- * @returns         Subgraph ready for NetworkGraph + the max possible degree
+ * @param raw            Full network data from GetSystemNetworkReactor
+ * @param systemUri      URI of the selected system (center node)
+ * @param degree         Number of system-hops to include (≥1)
+ * @param fallbackLabel  Optional label for the system — used to render a single
+ *                       isolated node when the system is not present in rawData
+ * @returns              Subgraph ready for NetworkGraph + the max possible degree
  */
 export function computeSubgraph(
 	raw: RawNetworkData,
 	systemUri: string,
 	degree: number,
+	fallbackLabel?: string,
 ): SubgraphResult {
 	const graph = buildSystemGraph(raw);
 	const rootNode = graph.nodesByUri.get(systemUri);
 
 	if (!rootNode || rootNode.type !== "System") {
+		// If a fallbackLabel is provided, show the system as a single isolated node
+		if (fallbackLabel) {
+			return {
+				nodes: [{
+					id: systemUri,
+					label: fallbackLabel,
+					type: "System",
+					color: COLOR_SELECTED,
+					fullName: fallbackLabel,
+					description: "",
+					connectionCount: 0,
+					propHash: {},
+				}],
+				edges: [],
+				legend: [{ color: COLOR_SELECTED, label: fallbackLabel }],
+				maxDegree: 0,
+				perDataObjectEdges: new Map(),
+			};
+		}
 		return { nodes: [], edges: [], legend: [], maxDegree: 0, perDataObjectEdges: new Map() };
 	}
 

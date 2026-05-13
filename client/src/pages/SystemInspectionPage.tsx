@@ -13,6 +13,13 @@ import { CapabilityGroupSidebar } from "@/components/CapabilityGroupSidebar";
 import { SystemInspectionPanel } from "@/components/SystemInspectionPanel";
 import type { CapabilityGroup, CapabilityGroupsResponse, SystemDetails } from "@/types/system";
 
+type ViewMode = "capabilityGroup" | "capability";
+
+const VIEW_MODE_LABELS: Record<ViewMode, string> = {
+  capabilityGroup: "Capability Groups",
+  capability: "Capabilities",
+};
+
 export const SystemInspectionPage = () => {
   const { insightId } = useInsight();
   const location = useLocation();
@@ -20,6 +27,16 @@ export const SystemInspectionPage = () => {
   // URI of the group to restore after navigating back from removal impact
   const restoreGroupUriRef = useRef<string | null>(
     (location.state as { restoreGroup?: { uri: string } } | null)?.restoreGroup?.uri ?? null
+  );
+
+  // Restore viewMode if navigating back from a sub-page
+  const restoreViewModeRef = useRef<ViewMode | null>(
+    (location.state as { viewMode?: ViewMode } | null)?.viewMode ?? null
+  );
+
+  // ── View mode toggle ──────────────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    restoreViewModeRef.current ?? "capabilityGroup"
   );
 
   // ── Capability groups data ────────────────────────────────────────────────
@@ -36,7 +53,7 @@ export const SystemInspectionPage = () => {
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
-  // ── Fetch capability groups on mount ──────────────────────────────────────
+  // ── Fetch capability groups on mount and when viewMode changes ─────────────
   useEffect(() => {
     if (!insightId) return;
     let cancelled = false;
@@ -44,7 +61,7 @@ export const SystemInspectionPage = () => {
     setIsLoading(true);
     setLoadError(null);
 
-    runPixel(`GetCapabilityGroups();`, insightId)
+    runPixel(`GetCapabilityGroups(mode=["${viewMode}"]);`, insightId)
       .then((response) => {
         if (cancelled) return;
         if (response.errors.length > 0) {
@@ -76,7 +93,7 @@ export const SystemInspectionPage = () => {
       });
 
     return () => { cancelled = true; };
-  }, [insightId]);
+  }, [insightId, viewMode]);
 
   // ── Fetch system details on selection ─────────────────────────────────────
   useEffect(() => {
@@ -140,6 +157,15 @@ export const SystemInspectionPage = () => {
     setDetailsError(null);
   }, []);
 
+  const handleViewModeChange = useCallback((newMode: ViewMode) => {
+    if (newMode === viewMode) return;
+    setViewMode(newMode);
+    setSelectedGroup(null);
+    setSelectedSystem(null);
+    setDetails(null);
+    setDetailsError(null);
+  }, [viewMode]);
+
   // ── Computed stats ────────────────────────────────────────────────────────
 
   const totalSystems = capabilityGroups.reduce((sum, cg) => sum + cg.systems.length, 0);
@@ -151,19 +177,42 @@ export const SystemInspectionPage = () => {
       <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900">Capability Group Overview: For each capability group, which systems have the most overlap with other systems?</h1>
+            <h1 className="text-lg font-semibold text-gray-900">
+              {viewMode === "capabilityGroup"
+                ? "Capability Group Overview: For each capability group, which systems have the most overlap with other systems?"
+                : "Capability Overview: For each capability, which systems have the most overlap with other systems?"}
+            </h1>
             <p className="mt-0.5 text-sm text-gray-500">
               {isLoading
-                ? "Loading capability groups…"
-                : `${capabilityGroups.length} capability groups · ${totalSystems} system mappings`}
+                ? `Loading ${VIEW_MODE_LABELS[viewMode].toLowerCase()}…`
+                : `${capabilityGroups.length} ${VIEW_MODE_LABELS[viewMode].toLowerCase()} · ${totalSystems} system mappings`}
             </p>
           </div>
-          {selectedSystem && (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="text-gray-300">|</span>
-              <span className="font-medium text-blue-600">{selectedSystem.label}</span>
+          <div className="flex items-center gap-3">
+            {/* View mode toggle */}
+            <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+              {(["capabilityGroup", "capability"] as ViewMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => handleViewModeChange(m)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                    viewMode === m
+                      ? "bg-white text-gray-900 shadow-sm border border-gray-200"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {VIEW_MODE_LABELS[m]}
+                </button>
+              ))}
             </div>
-          )}
+            {selectedSystem && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <span className="text-gray-300">|</span>
+                <span className="font-medium text-blue-600">{selectedSystem.label}</span>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -174,7 +223,7 @@ export const SystemInspectionPage = () => {
           <div className="flex flex-1 items-center justify-center bg-gray-50">
             <div className="flex flex-col items-center gap-3">
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-gray-300 border-t-blue-600" />
-              <p className="text-sm text-gray-500">Loading capability groups…</p>
+              <p className="text-sm text-gray-500">Loading {VIEW_MODE_LABELS[viewMode].toLowerCase()}…</p>
             </div>
           </div>
         )}
@@ -198,7 +247,7 @@ export const SystemInspectionPage = () => {
             {!selectedSystem && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 px-4 py-2 shadow-sm">
                 <p className="text-xs text-gray-500">
-                  Click a <span className="font-medium text-gray-700">capability group</span> to zoom in · Click a <span className="font-medium text-gray-700">system</span> to inspect
+                  Click a <span className="font-medium text-gray-700">{viewMode === "capabilityGroup" ? "capability group" : "capability"}</span> to zoom in · Click a <span className="font-medium text-gray-700">system</span> to inspect
                 </p>
               </div>
             )}
@@ -217,6 +266,7 @@ export const SystemInspectionPage = () => {
           <CapabilityGroupSidebar
             group={selectedGroup}
             onClose={handleCloseGroupSidebar}
+            viewMode={viewMode}
           />
         )}
 

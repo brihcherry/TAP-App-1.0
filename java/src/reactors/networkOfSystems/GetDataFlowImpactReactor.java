@@ -146,41 +146,37 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
   }
 
   // ── Q3: Outbound Interface Connections (first-order, supported only) ──────
-  // One hop: <selectedSystem> → Provide → ?icd → Consume → ?targetSystem
-  // No recursion or BFS — only immediate direct connections.
+  // <selectedSystem> → Provide → ?icd (supported) → Payload → ?dataObject
+  // No Consume join needed — the target system is derived from the interface
+  // naming convention (Provider%Consumer%DataObject).
 
   private List<Map<String, Object>> fetchOutboundConnections(QueryExecutor executor, String systemUri) {
+    String systemName = extractLabel(systemUri);
+
     String query =
-        "SELECT DISTINCT ?icd ?targetSystem ?dataObject WHERE {"
-        + " ?upstream <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Provide> ."
-        + " ?downstream <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Consume> ."
-        + " ?carries <" + RDFS_SUBPROP + "> <" + BASE + "/Relation/Payload> ."
-        + " <" + systemUri + "> ?upstream ?icd ."
+        "SELECT DISTINCT ?icd ?dataObject WHERE {"
         + " ?icd <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
-        + " ?icd <" + BASE + "/Relation/Phase> <" + LIFECYCLE_SUPPORTED + "> ."
-        + " ?icd ?downstream ?targetSystem ."
-        + " ?targetSystem <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
-        + " ?icd ?carries ?dataObject ."
+        + " <" + systemUri + "> <" + BASE + "/Relation/Provide> ?icd ."
+        + " FILTER NOT EXISTS { ?icd <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Retired_(Not_Supported)> }"
+        + " ?icd <" + BASE + "/Relation/Payload> ?dataObject ."
         + " ?dataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject> ."
         + "}";
 
     List<Map<String, String>> rows = executor.executeSelect(query);
 
-    // Group by (icd, targetSystem) → list of dataObjects
+    // Group by icd → list of dataObjects
     Map<String, Map<String, Object>> groupedMap = new LinkedHashMap<>();
     for (Map<String, String> row : rows) {
       String icdUri = row.get("icd");
-      String targetUri = row.get("targetSystem");
       String dataObjUri = row.get("dataObject");
-      if (icdUri == null || targetUri == null || dataObjUri == null) continue;
+      if (icdUri == null || dataObjUri == null) continue;
 
-      String key = icdUri + "|" + targetUri;
-      Map<String, Object> group = groupedMap.computeIfAbsent(key, k -> {
+      Map<String, Object> group = groupedMap.computeIfAbsent(icdUri, k -> {
         Map<String, Object> g = new LinkedHashMap<>();
         g.put("interfaceUri", icdUri);
-        g.put("interfaceLabel", extractLabel(icdUri));
-        g.put("targetSystemUri", targetUri);
-        g.put("targetSystemLabel", extractLabel(targetUri));
+        String icdLabel = extractLabel(icdUri);
+        g.put("interfaceLabel", icdLabel);
+        g.put("targetSystemLabel", deriveTargetSystem(icdLabel, systemName));
         g.put("dataObjects", new ArrayList<Map<String, String>>());
         return g;
       });
@@ -209,6 +205,27 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     if (uri == null) return "";
     String label = uri.contains("/") ? uri.substring(uri.lastIndexOf('/') + 1) : uri;
     return label.replace('_', ' ');
+  }
+
+  /**
+   * Derives the target system name from an interface label using the naming
+   * convention "Provider%Consumer%DataObject". Returns the segment that is NOT
+   * the selected system name. Falls back to the full interface label if parsing fails.
+   */
+  private static String deriveTargetSystem(String interfaceLabel, String selectedSystemName) {
+    if (interfaceLabel == null) return "";
+    String[] segments = interfaceLabel.split("%");
+    if (segments.length >= 2) {
+      // The interface name is "Provider%Consumer%..." — the target is whichever
+      // segment doesn't match the selected system (provider).
+      String first = segments[0].trim();
+      String second = segments[1].trim();
+      if (first.equalsIgnoreCase(selectedSystemName)) {
+        return second;
+      }
+      return first;
+    }
+    return interfaceLabel;
   }
 
   private static String normalizeCrm(String rawCrm) {

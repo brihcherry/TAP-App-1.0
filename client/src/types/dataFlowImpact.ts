@@ -23,8 +23,7 @@ export interface OutboundDataObject {
 }
 
 export interface OutboundConnection {
-  interfaceUri: string;
-  interfaceLabel: string;
+  targetSystemUri: string;
   targetSystemLabel: string;
   dataObjects: OutboundDataObject[];
 }

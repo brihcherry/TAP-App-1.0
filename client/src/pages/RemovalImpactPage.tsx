@@ -282,46 +282,28 @@ export const RemovalImpactPage = () => {
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {(() => {
-                      // Group connections by target system, merge data objects
-                      const grouped = new Map<string, { label: string; dataObjects: Map<string, string> }>();
-                      for (const conn of systemImpact.outboundConnections) {
-                        const key = conn.targetSystemLabel;
-                        if (!grouped.has(key)) {
-                          grouped.set(key, { label: key, dataObjects: new Map() });
-                        }
-                        const entry = grouped.get(key)!;
-                        for (const obj of conn.dataObjects) {
-                          entry.dataObjects.set(obj.uri, obj.label);
-                        }
-                      }
-                      return Array.from(grouped.entries())
-                        .sort(([a], [b]) => a.localeCompare(b))
-                        .map(([key, { label, dataObjects }]) => (
-                          <div
-                            key={key}
-                            className="rounded border border-gray-200 bg-gray-50 p-3"
-                          >
-                            <span className="text-sm font-semibold text-gray-800 block mb-2">
-                              → {label}
-                            </span>
-                            {dataObjects.size > 0 && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {Array.from(dataObjects.entries())
-                                  .sort(([, a], [, b]) => a.localeCompare(b))
-                                  .map(([uri, objLabel]) => (
-                                    <span
-                                      key={uri}
-                                      className="inline-block rounded-full bg-white border border-gray-300 px-2.5 py-0.5 text-xs text-gray-700"
-                                    >
-                                      {objLabel}
-                                    </span>
-                                  ))}
-                              </div>
-                            )}
+                    {systemImpact.outboundConnections.map((conn) => (
+                      <div
+                        key={conn.targetSystemUri}
+                        className="rounded border border-gray-200 bg-gray-50 p-3"
+                      >
+                        <span className="text-sm font-semibold text-gray-800 block mb-2">
+                          → {conn.targetSystemLabel}
+                        </span>
+                        {conn.dataObjects.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {conn.dataObjects.map((obj) => (
+                              <span
+                                key={obj.uri}
+                                className="inline-block rounded-full bg-white border border-gray-300 px-2.5 py-0.5 text-xs text-gray-700"
+                              >
+                                {obj.label}
+                              </span>
+                            ))}
                           </div>
-                        ));
-                    })()}
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

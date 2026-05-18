@@ -145,57 +145,58 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     return result;
   }
 
-  // ── Q3: Outbound Interface Connections (first-order, supported only) ──────
-  // <selectedSystem> → Provide → ?icd (supported) → Payload → ?dataObject
-  // No Consume join needed — the target system is derived from the interface
-  // naming convention (Provider%Consumer%DataObject).
+  // ── Q3: Outbound Interface Connections ──────────────────────────────────────
+  // <selectedSystem> → Provide → ?icd → Consume → ?targetSystem (ActiveSystem)
+  // Conditions:
+  //   - Interface must NOT have Phase = Retired_(Not_Supported)
+  //   - Interface must carry a DataObject payload
+  //   - Target system must be an ActiveSystem and not the selected system itself
 
   private List<Map<String, Object>> fetchOutboundConnections(QueryExecutor executor, String systemUri) {
-    String systemName = extractLabel(systemUri);
-
     String query =
-        "SELECT DISTINCT ?icd ?dataObject WHERE {"
+        "SELECT DISTINCT ?icd ?targetSystem ?dataObject WHERE {"
         + " ?icd <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
         + " <" + systemUri + "> <" + BASE + "/Relation/Provide> ?icd ."
         + " FILTER NOT EXISTS { ?icd <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Retired_(Not_Supported)> }"
+        + " ?icd <" + BASE + "/Relation/Consume> ?targetSystem ."
+        + " ?targetSystem <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
+        + " FILTER(?targetSystem != <" + systemUri + ">)"
         + " ?icd <" + BASE + "/Relation/Payload> ?dataObject ."
         + " ?dataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject> ."
         + "}";
 
     List<Map<String, String>> rows = executor.executeSelect(query);
 
-    // Group by icd → list of dataObjects
+    // Group by targetSystem → list of dataObjects (merged across interfaces)
     Map<String, Map<String, Object>> groupedMap = new LinkedHashMap<>();
     for (Map<String, String> row : rows) {
-      String icdUri = row.get("icd");
+      String targetUri = row.get("targetSystem");
       String dataObjUri = row.get("dataObject");
-      if (icdUri == null || dataObjUri == null) continue;
+      if (targetUri == null || dataObjUri == null) continue;
 
-      Map<String, Object> group = groupedMap.computeIfAbsent(icdUri, k -> {
+      Map<String, Object> group = groupedMap.computeIfAbsent(targetUri, k -> {
         Map<String, Object> g = new LinkedHashMap<>();
-        g.put("interfaceUri", icdUri);
-        String icdLabel = extractLabel(icdUri);
-        g.put("interfaceLabel", icdLabel);
-        g.put("targetSystemLabel", deriveTargetSystem(icdLabel, systemName));
+        g.put("targetSystemUri", targetUri);
+        g.put("targetSystemLabel", extractLabel(targetUri));
         g.put("dataObjects", new ArrayList<Map<String, String>>());
         return g;
       });
 
       @SuppressWarnings("unchecked")
       List<Map<String, String>> dataObjects = (List<Map<String, String>>) group.get("dataObjects");
-      Map<String, String> doEntry = new HashMap<>();
-      doEntry.put("uri", dataObjUri);
-      doEntry.put("label", extractLabel(dataObjUri));
-      dataObjects.add(doEntry);
+      // Deduplicate data objects within same target system
+      boolean alreadyPresent = dataObjects.stream().anyMatch(d -> dataObjUri.equals(d.get("uri")));
+      if (!alreadyPresent) {
+        Map<String, String> doEntry = new HashMap<>();
+        doEntry.put("uri", dataObjUri);
+        doEntry.put("label", extractLabel(dataObjUri));
+        dataObjects.add(doEntry);
+      }
     }
 
-    // Sort by target system label, then interface label
+    // Sort by target system label
     List<Map<String, Object>> result = new ArrayList<>(groupedMap.values());
-    result.sort((a, b) -> {
-      int cmp = ((String) a.get("targetSystemLabel")).compareTo((String) b.get("targetSystemLabel"));
-      if (cmp != 0) return cmp;
-      return ((String) a.get("interfaceLabel")).compareTo((String) b.get("interfaceLabel"));
-    });
+    result.sort((a, b) -> ((String) a.get("targetSystemLabel")).compareTo((String) b.get("targetSystemLabel")));
     return result;
   }
 
@@ -205,27 +206,6 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     if (uri == null) return "";
     String label = uri.contains("/") ? uri.substring(uri.lastIndexOf('/') + 1) : uri;
     return label.replace('_', ' ');
-  }
-
-  /**
-   * Derives the target system name from an interface label using the naming
-   * convention "Provider%Consumer%DataObject". Returns the segment that is NOT
-   * the selected system name. Falls back to the full interface label if parsing fails.
-   */
-  private static String deriveTargetSystem(String interfaceLabel, String selectedSystemName) {
-    if (interfaceLabel == null) return "";
-    String[] segments = interfaceLabel.split("%");
-    if (segments.length >= 2) {
-      // The interface name is "Provider%Consumer%..." — the target is whichever
-      // segment doesn't match the selected system (provider).
-      String first = segments[0].trim();
-      String second = segments[1].trim();
-      if (first.equalsIgnoreCase(selectedSystemName)) {
-        return second;
-      }
-      return first;
-    }
-    return interfaceLabel;
   }
 
   private static String normalizeCrm(String rawCrm) {

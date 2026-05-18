@@ -128,6 +128,22 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
 
     List<Map<String, Object>> capabilityGroups = new ArrayList<>(groupMap.values());
 
+    // Fetch description for each group/capability
+    for (Map<String, Object> group : capabilityGroups) {
+      String uri = (String) group.get("uri");
+      String descQuery =
+          "SELECT DISTINCT ?Description WHERE {"
+          + "{<" + uri + "> <" + BASE + "/Relation/Contains/Description> ?Description}"
+          + "}";
+      List<Map<String, String>> descRows = executor.executeSelect(descQuery);
+      String description = "";
+      if (!descRows.isEmpty()) {
+        String val = descRows.get(0).get("Description");
+        if (val != null) description = formatLiteralText(val);
+      }
+      group.put("description", description);
+    }
+
     Map<String, Object> result = new HashMap<>();
     result.put("mode", mode);
     result.put("capabilityGroups", capabilityGroups);
@@ -140,6 +156,20 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
     if (uri == null) return "";
     String label = uri.contains("/") ? uri.substring(uri.lastIndexOf('/') + 1) : uri;
     return label.replace('_', ' ');
+  }
+
+  /**
+   * Formats RDF literal text for display by removing wrapping quotes,
+   * replacing underscores with spaces, and collapsing repeated whitespace.
+   */
+  private static String formatLiteralText(String value) {
+    if (value == null) return "";
+    String formatted = value.trim();
+    if (formatted.length() >= 2 && formatted.startsWith("\"") && formatted.endsWith("\"")) {
+      formatted = formatted.substring(1, formatted.length() - 1);
+    }
+    formatted = formatted.replace('_', ' ');
+    return formatted.replaceAll("\\s+", " ").trim();
   }
 
   @Override

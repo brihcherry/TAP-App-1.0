@@ -26,7 +26,7 @@ export const SystemInspectionPanel = ({ details }: SystemInspectionPanelProps) =
   const { insightId } = useInsight();
 
   const tabs: Tab[] = [
-    { id: "dataObjects", label: "Data Objects", count: details.dataObjects.length },
+    { id: "dataObjects", label: "Data Subject Areas", count: details.dataObjects.length },
     { id: "interfaces", label: "Interfaces", count: details.interfaces.length },
     { id: "businessProcesses", label: "Business Processes", count: details.businessProcesses.length },
     { id: "activities", label: "Activities", count: details.activities.length },
@@ -91,6 +91,24 @@ export const SystemInspectionPanel = ({ details }: SystemInspectionPanelProps) =
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      {/* System metadata */}
+      <div className="border-b border-gray-200 bg-white px-6 py-4">
+        <div className="space-y-2 text-sm text-gray-600">
+          <p>
+            <strong className="text-gray-700">Description:</strong>{" "}
+            {details.description?.trim() ? details.description : "Not available"}
+          </p>
+          <p>
+            <strong className="text-gray-700">Disposition:</strong>{" "}
+            {details.disposition?.trim() ? details.disposition : "Not available"}
+          </p>
+          <p>
+            <strong className="text-gray-700">Owner:</strong>{" "}
+            {details.owner?.trim() ? details.owner : "Not available"}
+          </p>
+        </div>
+      </div>
+
       {/* Tab bar */}
       <div className="border-b border-gray-200 bg-white px-6">
         <div className="flex gap-1 overflow-x-auto">
@@ -129,7 +147,7 @@ export const SystemInspectionPanel = ({ details }: SystemInspectionPanelProps) =
         {activeTab === "dataObjects" && (
           <ItemList
             items={details.dataObjects}
-            emptyMessage="No data objects found for this system."
+            emptyMessage="No data subject areas found for this system."
           />
         )}
         {activeTab === "interfaces" && <InterfaceList items={details.interfaces} />}
@@ -218,17 +236,33 @@ function InterfaceList({ items }: { items: InterfaceItem[] }) {
       {providers.length > 0 && (
         <section>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Outgoing — system provides data to these interfaces ({providers.length})
+            Outgoing — this system sends data to ({providers.length})
           </h3>
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="space-y-3">
             {providers.map((item) => (
               <li
                 key={`${item.uri}-provider`}
-                title={item.uri}
-                className="flex items-center gap-2.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-gray-800"
+                className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
               >
-                <span className="h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
-                {item.label}
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
+                  <span className="text-sm font-medium text-gray-800">
+                    {item.connectedSystem || "Unknown System"}
+                  </span>
+                </div>
+                {item.dataObjects && item.dataObjects.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.dataObjects.map((dobj) => (
+                      <span
+                        key={dobj.uri}
+                        className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700"
+                      >
+                        {dobj.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1.5 text-[11px] text-gray-400">Interface: {item.label}</p>
               </li>
             ))}
           </ul>
@@ -237,17 +271,33 @@ function InterfaceList({ items }: { items: InterfaceItem[] }) {
       {consumers.length > 0 && (
         <section>
           <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Incoming — these interfaces feed data into this system ({consumers.length})
+            Incoming — this system receives data from ({consumers.length})
           </h3>
-          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="space-y-3">
             {consumers.map((item) => (
               <li
                 key={`${item.uri}-consumer`}
-                title={item.uri}
-                className="flex items-center gap-2.5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-gray-800"
+                className="rounded-lg border border-green-200 bg-green-50 px-4 py-3"
               >
-                <span className="h-2 w-2 flex-shrink-0 rounded-full bg-green-500" />
-                {item.label}
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 flex-shrink-0 rounded-full bg-green-500" />
+                  <span className="text-sm font-medium text-gray-800">
+                    {item.connectedSystem || "Unknown System"}
+                  </span>
+                </div>
+                {item.dataObjects && item.dataObjects.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.dataObjects.map((dobj) => (
+                      <span
+                        key={dobj.uri}
+                        className="rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700"
+                      >
+                        {dobj.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-1.5 text-[11px] text-gray-400">Interface: {item.label}</p>
               </li>
             ))}
           </ul>

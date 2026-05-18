@@ -10,6 +10,7 @@ export interface SystemOption {
 export interface CapabilityGroup {
   uri: string;
   label: string;
+  description?: string;
   systems: SystemOption[];
 }
 
@@ -29,6 +30,12 @@ export interface InterfaceItem extends LabeledItem {
   /** "provider" = this system pushes data out to the interface (outgoing).
    *  "consumer" = the interface feeds data into this system (incoming). */
   role: "provider" | "consumer";
+  /** The system on the other end of this interface. */
+  connectedSystem?: string;
+  /** URI of the connected system. */
+  connectedSystemUri?: string;
+  /** Data objects carried by this interface. */
+  dataObjects?: LabeledItem[];
 }
 
 /** Full attribute details for a selected system, returned by GetSystemDetails. */
@@ -49,4 +56,10 @@ export interface SystemDetails {
   activities: LabeledItem[];
   /** Personnel / user types assigned to the system. */
   userTypes: LabeledItem[];
+  /** System description from RDF. */
+  description: string;
+  /** System disposition (e.g. "Sustain", "Decommission"). */
+  disposition: string;
+  /** System owner (extracted from SystemOwner concept). */
+  owner: string;
 }

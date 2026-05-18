@@ -78,6 +78,11 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
         BASE + "/Concept/Activity", BASE + "/Relation/Supports", "Activity"));
     result.put("userTypes", fetchByType(executor, systemUri,
         BASE + "/Concept/Personnel", BASE + "/Relation/UsedBy", "Personnel"));
+    result.put("description", fetchScalar(executor, systemUri,
+        BASE + "/Relation/Contains/Description", "Description"));
+    result.put("disposition", fetchScalar(executor, systemUri,
+        BASE + "/Relation/Contains/Disposition", "Disposition"));
+    result.put("owner", fetchOwner(executor, systemUri));
 
     return new NounMetadata(result, PixelDataType.MAP);
   }
@@ -101,32 +106,35 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
 
   /**
    * Fetches SystemInterfaces the system is connected to, along with direction.
+   * Only retrieves interfaces that are marked as supported via Phase property.
    * Runs two queries to distinguish outgoing (provider) from incoming (consumer).
    */
-  private List<Map<String, String>> fetchInterfaces(QueryExecutor executor, String sysUri) {
+  private List<Map<String, Object>> fetchInterfaces(QueryExecutor executor, String sysUri) {
     String outQuery =
         "SELECT DISTINCT ?Interface WHERE {"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
         + "{<" + sysUri + "> <" + BASE + "/Relation/Provide> ?Interface}"
+        + "{?Interface <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Supported>}"
         + "}";
 
     String inQuery =
         "SELECT DISTINCT ?Interface WHERE {"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
         + "{?Interface <" + BASE + "/Relation/Consume> <" + sysUri + ">}"
+        + "{?Interface <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Supported>}"
         + "}";
 
-    List<Map<String, String>> interfaces = new ArrayList<>();
+    List<Map<String, Object>> interfaces = new ArrayList<>();
     for (Map<String, String> row : executor.executeSelect(outQuery)) {
       String uri = row.get("Interface");
       if (uri != null) {
-        interfaces.add(makeInterfaceEntry(uri, "provider"));
+        interfaces.add(makeEnrichedInterfaceEntry(executor, uri, "provider", sysUri));
       }
     }
     for (Map<String, String> row : executor.executeSelect(inQuery)) {
       String uri = row.get("Interface");
       if (uri != null) {
-        interfaces.add(makeInterfaceEntry(uri, "consumer"));
+        interfaces.add(makeEnrichedInterfaceEntry(executor, uri, "consumer", sysUri));
       }
     }
     return interfaces;
@@ -145,7 +153,7 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
     List<Map<String, String>> rows = executor.executeSelect(query);
     if (!rows.isEmpty()) {
       String val = rows.get(0).get(varName);
-      return val != null ? val : "";
+      return val != null ? formatLiteralText(val) : "";
     }
     return "";
   }
@@ -172,6 +180,20 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
     return label.replace('_', ' ');
   }
 
+  /**
+   * Formats RDF literal text for display by removing wrapping quotes,
+   * replacing underscores with spaces, and collapsing repeated whitespace.
+   */
+  private static String formatLiteralText(String value) {
+    if (value == null) return "";
+    String formatted = value.trim();
+    if (formatted.length() >= 2 && formatted.startsWith("\"") && formatted.endsWith("\"")) {
+      formatted = formatted.substring(1, formatted.length() - 1);
+    }
+    formatted = formatted.replace('_', ' ');
+    return formatted.replaceAll("\\s+", " ").trim();
+  }
+
   private static List<Map<String, String>> rowsToLabeledList(
       List<Map<String, String>> rows, String varName) {
     List<Map<String, String>> result = new ArrayList<>();
@@ -193,6 +215,82 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
     entry.put("label", extractLabel(uri));
     entry.put("role", role);
     return entry;
+  }
+
+  /**
+   * Creates an enriched interface entry that includes the connected system and data objects.
+   */
+  private Map<String, Object> makeEnrichedInterfaceEntry(
+      QueryExecutor executor, String ifcUri, String role, String currentSystemUri) {
+    Map<String, Object> entry = new HashMap<>();
+    entry.put("uri", ifcUri);
+    entry.put("label", extractLabel(ifcUri));
+    entry.put("role", role);
+
+    // Find the connected system (the "other end" of this interface)
+    String connectedSystem = "";
+    String connectedSystemUri = "";
+    if ("provider".equals(role)) {
+      // This system provides to interface → find who consumes from it
+      String q = "SELECT DISTINCT ?Sys WHERE {"
+          + "{<" + ifcUri + "> <" + BASE + "/Relation/Consume> ?Sys}"
+          + "{?Sys <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
+          + "}";
+      List<Map<String, String>> rows = executor.executeSelect(q);
+      if (!rows.isEmpty()) {
+        connectedSystemUri = rows.get(0).get("Sys");
+        if (connectedSystemUri != null) connectedSystem = extractLabel(connectedSystemUri);
+      }
+    } else {
+      // This system consumes from interface → find who provides to it
+      String q = "SELECT DISTINCT ?Sys WHERE {"
+          + "{?Sys <" + BASE + "/Relation/Provide> <" + ifcUri + ">}"
+          + "{?Sys <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
+          + "}";
+      List<Map<String, String>> rows = executor.executeSelect(q);
+      if (!rows.isEmpty()) {
+        connectedSystemUri = rows.get(0).get("Sys");
+        if (connectedSystemUri != null) connectedSystem = extractLabel(connectedSystemUri);
+      }
+    }
+    entry.put("connectedSystem", connectedSystem != null ? connectedSystem : "");
+    entry.put("connectedSystemUri", connectedSystemUri != null ? connectedSystemUri : "");
+
+    // Fetch data objects carried by this interface
+    String doQuery = "SELECT DISTINCT ?DataObject WHERE {"
+        + "{<" + ifcUri + "> <" + BASE + "/Relation/Payload> ?DataObject}"
+        + "{?DataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject>}"
+        + "}";
+    List<Map<String, String>> doRows = executor.executeSelect(doQuery);
+    List<Map<String, String>> dataObjects = new ArrayList<>();
+    for (Map<String, String> doRow : doRows) {
+      String doUri = doRow.get("DataObject");
+      if (doUri != null) {
+        Map<String, String> doEntry = new HashMap<>();
+        doEntry.put("uri", doUri);
+        doEntry.put("label", extractLabel(doUri));
+        dataObjects.add(doEntry);
+      }
+    }
+    entry.put("dataObjects", dataObjects);
+
+    return entry;
+  }
+
+  /**
+   * Fetches the system owner via the OwnedBy relation to SystemOwner concept.
+   */
+  private String fetchOwner(QueryExecutor executor, String sysUri) {
+    String query = "SELECT DISTINCT ?Owner WHERE {"
+        + "{<" + sysUri + "> <" + BASE + "/Relation/OwnedBy> ?Owner}"
+        + "{?Owner <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemOwner>}"
+        + "}";
+    List<Map<String, String>> rows = executor.executeSelect(query);
+    if (!rows.isEmpty()) {
+      String ownerUri = rows.get(0).get("Owner");
+      if (ownerUri != null) return extractLabel(ownerUri);
+    }
+    return "";
   }
 
   // ── MCP metadata ─────────────────────────────────────────────────────────

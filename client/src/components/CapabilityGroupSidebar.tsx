@@ -188,7 +188,7 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 							<strong className="text-gray-800">{analysis.totalActivities}</strong> Activities
 						</span>
 						<span>
-							<strong className="text-gray-800">{analysis.totalDataObjects}</strong> Data Objects
+							<strong className="text-gray-800">{analysis.totalDataObjects}</strong> Data Subject Areas
 						</span>
 					</div>
 
@@ -198,14 +198,22 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 					{(["BP", "Activity", "DataObject"] as const).map((k) => (
 						<span key={k} className="flex items-center gap-1">
 							<KindBadge kind={k} />
-							<span>{k === "BP" ? "Business Process" : k === "Activity" ? "Activity" : "Data Object"}</span>
+							<span>{k === "BP" ? "Business Process" : k === "Activity" ? "Activity" : "Data Subject Area"}</span>
 						</span>
 					))}
 				</div>
 
+				{/* Group/Capability description */}
+				<div className="border-b border-gray-100 px-4 py-3">
+					<p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Description:</p>
+					<p className="mt-1 text-xs text-gray-500 leading-relaxed">
+						{group.description?.trim() ? group.description : "Not available"}
+					</p>
+				</div>
+
 				{/* ── Systems by Overlap Ranking ──────────────────────── */}
 				<p className="px-4 py-3 text-[11px] leading-relaxed text-gray-400">
-					This list ranks each system in the capability group by <span className="font-semibold text-gray-500">Overlap Score</span>, defined as the percent of Business Processes, Activities, and Data Objects that are also supported by another system in the capability group.
+					This list ranks each system in the capability group by <span className="font-semibold text-gray-500">Overlap Score</span>, defined as the percent of Business Processes, Activities, and Data Subject Areas that are also supported by another system in the capability group.
 				</p>
 				<ul className="divide-y divide-gray-100">
 					{analysis.overlapRanking.map((sys, idx) => {
@@ -250,7 +258,7 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 									}}
 									className="inline-flex items-center gap-1 rounded-md bg-gray-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-gray-700 active:bg-gray-800"
 								>
-									View Data Flow Graph →
+									View System Network Graph 
 								</button>
 								<button
 									type="button"
@@ -265,17 +273,19 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 									}}
 									className="inline-flex items-center gap-1 rounded-md bg-blue-400 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800"
 								>
-									Data Object Impact →
+									View Removal Impact
 								</button>
 							</div>								{/* Expanded detail */}
 								{open && (
 									<div className="space-y-3 border-t border-gray-50 px-4 pb-3 pt-2">
 										{/* Unique items — removal impact */}
-									{sys.uniqueItems.length > 0 && (
-											<div>
+									<div>
 												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
 													Unique Contributions ({sys.uniqueItems.length})
 												</p>
+												{sys.uniqueItems.length === 0 ? (
+													<p className="text-[11px] italic text-gray-400">No unique contributions — all items shared with other systems.</p>
+												) : (
 												<ul className="space-y-1">
 													{sys.uniqueItems.map((item) => (
 														<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-600">
@@ -284,8 +294,8 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 														</li>
 													))}
 												</ul>
+												)}
 											</div>
-										)}
 										{/* Shared items */}
 										{sys.sharedItems.length > 0 && (
 											<div>

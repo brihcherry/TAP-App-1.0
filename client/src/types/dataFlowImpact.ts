@@ -1,51 +1,43 @@
-// Type definitions for the Data Flow Impact Analyzer (redesigned Removal Impact).
+// Type definitions for the Data Flow Impact Analyzer.
 
-import type { LabeledItem } from "./system";
+// ── Data Subject Area ────────────────────────────────────────────────────────
 
-/** Classification of a DataObject's impact when the target system is removed. */
-export type FlowImpactClassification = "soleProvider" | "criticalRelay" | "nonCritical";
-
-/** The role the target system plays for a given DataObject. */
-export type SystemFlowRole = "provider" | "consumer" | "relay";
-
-/** A directed edge in a DataObject's flow graph. */
-export interface FlowEdge {
-  source: string;
-  target: string;
+export interface DataSubjectArea {
+  uri: string;
+  label: string;
 }
 
-// ── Reactor response types ──────────────────────────────────────────────────
+// ── Creator / Modifier Data Objects ──────────────────────────────────────────
 
-/** Per-DataObject impact entry returned by GetDataFlowImpact reactor. */
-export interface DataFlowEntry {
-  dataObjectUri: string;
-  dataObjectLabel: string;
-  role: SystemFlowRole;
-  classification: FlowImpactClassification;
-  isolatedSystems: LabeledItem[];
-  totalSystemsInGraph: number;
-  alternativeProviders: LabeledItem[];
-  flowEdges: FlowEdge[];
+export interface CrmDataObject {
+  uri: string;
+  label: string;
+  crm: 'C' | 'M';
 }
 
-/** Raw response from GetDataFlowImpact reactor. */
-export interface DataFlowImpactReactorResponse {
+// ── Outbound Connection ───────────────────────────────────────────────────────
+
+export interface OutboundDataObject {
+  uri: string;
+  label: string;
+}
+
+export interface OutboundConnection {
+  interfaceUri: string;
+  interfaceLabel: string;
+  targetSystemUri: string;
+  targetSystemLabel: string;
+  dataObjects: OutboundDataObject[];
+}
+
+// ── Reactor response ──────────────────────────────────────────────────────────
+
+/** Response from GetDataFlowImpact reactor. */
+export interface SystemImpactReactorResponse {
   systemUri: string;
   systemName: string;
-  dataFlowImpacts: DataFlowEntry[];
-}
-
-// ── Computed result for the page ────────────────────────────────────────────
-
-/** Grouped and summarized result ready for UI rendering. */
-export interface DataFlowImpactResult {
-  targetSystem: LabeledItem;
-  soleProvider: DataFlowEntry[];
-  criticalRelay: DataFlowEntry[];
-  nonCritical: DataFlowEntry[];
-  summary: {
-    totalDataObjects: number;
-    totalIsolatedSystems: number;
-    criticalPaths: number;
-  };
+  isAuthoritativeDataSource: boolean;
+  dataSubjectAreas: DataSubjectArea[];
+  crmDataObjects: CrmDataObject[];
+  outboundConnections: OutboundConnection[];
 }

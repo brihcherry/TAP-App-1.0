@@ -6,7 +6,7 @@ import type { ItemKind } from "@/lib/groupOverlap";
 export const KIND_STYLES: Record<ItemKind, { className: string; label: string }> = {
 	BP: { className: "bg-blue-100 text-blue-700", label: "BP" },
 	Activity: { className: "bg-purple-100 text-purple-700", label: "Act" },
-	DataObject: { className: "bg-teal-100 text-teal-700", label: "Data" },
+	DataObject: { className: "bg-teal-100 text-teal-700", label: "DSA" },
 };
 
 export const KindBadge = ({ kind }: { kind: ItemKind }) => (

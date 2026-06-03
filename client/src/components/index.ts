@@ -10,3 +10,4 @@ export * from "./LoadingScreen";
 export * from "./MainNavigation";
 export * from "./SystemGraphSidebar";
 export * from "./SystemInspectionPanel";
+export * from "./SystemSearchDropdown";

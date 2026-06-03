@@ -4,12 +4,13 @@
 //
 // Data comes from GetCapabilityGroups (grouping) and GetSystemDetails (details).
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
 import { CapabilityBubbleGraph } from "@/components/CapabilityBubbleGraph";
 import { CapabilityGroupSidebar } from "@/components/CapabilityGroupSidebar";
+import { SystemSearchDropdown, type SearchDropdownItem } from "@/components/SystemSearchDropdown";
 import { SystemInspectionPanel } from "@/components/SystemInspectionPanel";
 import type { CapabilityGroup, CapabilityGroupsResponse, SystemDetails } from "@/types/system";
 
@@ -170,6 +171,54 @@ export const SystemInspectionPage = () => {
 
   const totalSystems = capabilityGroups.reduce((sum, cg) => sum + cg.systems.length, 0);
 
+  const searchableSystems = useMemo(() => {
+    const systemsByUri = new Map<
+      string,
+      { label: string; uri: string; groupUri: string; groupLabels: Set<string> }
+    >();
+
+    capabilityGroups.forEach((group) => {
+      group.systems.forEach((system) => {
+        const existing = systemsByUri.get(system.uri);
+        if (existing) {
+          existing.groupLabels.add(group.label);
+          return;
+        }
+
+        systemsByUri.set(system.uri, {
+          label: system.label,
+          uri: system.uri,
+          groupUri: group.uri,
+          groupLabels: new Set([group.label]),
+        });
+      });
+    });
+
+    return Array.from(systemsByUri.values())
+      .map((item) => ({
+        label: item.label,
+        value: item.uri,
+        groupUri: item.groupUri,
+        description: Array.from(item.groupLabels).sort().join(" • "),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [capabilityGroups]);
+
+  const handleSystemSearchSelect = useCallback((item: SearchDropdownItem) => {
+    const systemUri = typeof item.value === "string" ? item.value : null;
+    if (!systemUri) return;
+
+    const groupUri = typeof item.groupUri === "string" ? item.groupUri : null;
+    const group = groupUri
+      ? capabilityGroups.find((cg) => cg.uri === groupUri) ?? null
+      : capabilityGroups.find((cg) => cg.systems.some((sys) => sys.uri === systemUri)) ?? null;
+
+    if (group) {
+      setSelectedGroup(group);
+    }
+    setSelectedSystem({ uri: systemUri, label: item.label });
+  }, [capabilityGroups]);
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -243,6 +292,22 @@ export const SystemInspectionPage = () => {
           <div className={`relative bg-gray-50 overflow-hidden ${
             selectedSystem ? "w-1/2" : "flex-1"
           }`}>
+            <div className="absolute left-4 top-4 z-20">
+              <SystemSearchDropdown
+                placeholder="Jump to a system"
+                items={searchableSystems}
+                selectedItem={selectedSystem?.label ?? null}
+                selectedValue={selectedSystem?.uri ?? null}
+                onSelect={() => {
+                  // Selection is handled in onSelectItem to keep label-only compatibility.
+                }}
+                onSelectItem={handleSystemSearchSelect}
+                onClear={handleClosePanel}
+                searchPlaceholder="Search systems..."
+                noResultsMessage="No systems match your search"
+                emptyMessage="No systems available"
+              />
+            </div>
             {/* Instruction overlay */}
             {!selectedSystem && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 rounded-lg bg-white/90 backdrop-blur-sm border border-gray-200 px-4 py-2 shadow-sm">

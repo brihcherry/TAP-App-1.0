@@ -18,6 +18,113 @@ import { KindBadge } from "./KindBadge";
 const MIN_WIDTH = 360;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 360;
+const TAP_CORE_DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
+
+type SimilarityBucketKey =
+	| "Business_Processes_Supported"
+	| "Activities_Supported"
+	| "Data_Subject_Area"
+	| "Environment"
+	| "User_Types"
+	| "Interfaces";
+
+interface SimilarityCategoryScore {
+	bucket: SimilarityBucketKey;
+	label: string;
+	score: number | null;
+}
+
+interface PairSimilarityResult {
+	summaryScore: number | null;
+	hasScore: boolean;
+	categories: SimilarityCategoryScore[];
+	direction?: string;
+}
+
+const SIMILARITY_BUCKET_LABELS: Record<SimilarityBucketKey, string> = {
+	Business_Processes_Supported: "Business Processes",
+	Activities_Supported: "Activities",
+	Data_Subject_Area: "Data Subject Areas",
+	Environment: "Environment",
+	User_Types: "User Types",
+	Interfaces: "Interfaces",
+};
+
+const SIMILARITY_BUCKETS = Object.keys(SIMILARITY_BUCKET_LABELS) as SimilarityBucketKey[];
+
+function makePairKey(system1: string, system2: string): string {
+	return system1 + "::" + system2;
+}
+
+function normalizeScore(value: unknown): number | null {
+	if (typeof value === "number" && Number.isFinite(value)) {
+		return Math.max(0, Math.min(100, value));
+	}
+	if (typeof value === "string") {
+		const parsed = Number(value);
+		if (Number.isFinite(parsed)) {
+			return Math.max(0, Math.min(100, parsed));
+		}
+	}
+	return null;
+}
+
+function getFieldByName(entry: Record<string, unknown>, name: string): unknown {
+	if (name in entry) return entry[name];
+	const key = Object.keys(entry).find((k) => k.toLowerCase() === name.toLowerCase());
+	return key ? entry[key] : undefined;
+}
+
+function parseSimilarityData(output: unknown): Map<string, PairSimilarityResult> {
+	const result = new Map<string, PairSimilarityResult>();
+	if (!output || typeof output !== "object") return result;
+
+	const pairs = (output as { pairs?: unknown }).pairs;
+	if (!Array.isArray(pairs)) return result;
+
+	for (const pairEntry of pairs) {
+		if (!pairEntry || typeof pairEntry !== "object") continue;
+		const pair = pairEntry as Record<string, unknown>;
+		const system1 = getFieldByName(pair, "system1Uri");
+		const system2 = getFieldByName(pair, "system2Uri");
+		if (typeof system1 !== "string" || typeof system2 !== "string") continue;
+
+		const categoryScores = getFieldByName(pair, "categoryScores");
+		const categories = SIMILARITY_BUCKETS.map((bucket) => {
+			let score: number | null = null;
+			if (categoryScores && typeof categoryScores === "object") {
+				score = normalizeScore((categoryScores as Record<string, unknown>)[bucket]);
+			}
+			return {
+				bucket,
+				label: SIMILARITY_BUCKET_LABELS[bucket],
+				score,
+			};
+		});
+
+		const directionalKey = makePairKey(system1, system2);
+		result.set(directionalKey, {
+			summaryScore: normalizeScore(getFieldByName(pair, "summaryScore")),
+			hasScore: getFieldByName(pair, "hasScore") === true,
+			categories,
+			direction: getFieldByName(pair, "direction") as string | undefined,
+		});
+	}
+
+	return result;
+}
+
+function normalizeUriList(uris: string[]): string[] {
+	const seen = new Set<string>();
+	const normalized: string[] = [];
+	for (const uri of uris) {
+		const trimmed = uri.trim();
+		if (!trimmed || seen.has(trimmed)) continue;
+		seen.add(trimmed);
+		normalized.push(trimmed);
+	}
+	return normalized;
+}
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -37,6 +144,10 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 	const [allDetails, setAllDetails] = useState<SystemDetails[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
+	const [pairSimilarity, setPairSimilarity] = useState<Map<string, PairSimilarityResult>>(new Map());
+	const [isLoadingSimilarity, setIsLoadingSimilarity] = useState(false);
+	const [similarityLoadError, setSimilarityLoadError] = useState<string | null>(null);
+	const [selectedPairBySystem, setSelectedPairBySystem] = useState<Record<string, string>>({});
 	// Set of system URIs whose detail rows are expanded (empty = all collapsed)
 	const [expandedSystems, setExpandedSystems] = useState<Set<string>>(new Set());
 
@@ -93,6 +204,9 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 		setIsLoading(true);
 		setLoadError(null);
 		setAllDetails([]);
+		setPairSimilarity(new Map());
+		setSimilarityLoadError(null);
+		setSelectedPairBySystem({});
 		setExpandedSystems(new Set());
 
 		const fetches = group.systems.map((sys) =>
@@ -122,6 +236,69 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 			cancelled = true;
 		};
 	}, [insightId, group]);
+
+	const requestedSystemUris = useMemo(
+		() => normalizeUriList(group.systems.map((sys) => sys.uri)),
+		[group]
+	);
+
+	const groupUriByLabel = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const sys of group.systems) {
+			map.set(sys.label.toLowerCase(), sys.uri.trim());
+		}
+		return map;
+	}, [group]);
+
+	const resolveSimilarityUri = useCallback(
+		(systemUri: string, systemLabel: string) => {
+			if (requestedSystemUris.includes(systemUri)) return systemUri;
+			return groupUriByLabel.get(systemLabel.toLowerCase()) ?? systemUri;
+		},
+		[groupUriByLabel, requestedSystemUris]
+	);
+
+	useEffect(() => {
+		if (!insightId || requestedSystemUris.length < 2) {
+			setPairSimilarity(new Map());
+			setSimilarityLoadError(null);
+			setIsLoadingSimilarity(false);
+			return;
+		}
+
+		let cancelled = false;
+		setIsLoadingSimilarity(true);
+		setSimilarityLoadError(null);
+
+		const systemUris = requestedSystemUris.map((uri) => `"${uri}"`).join(",");
+		const pixel = `GetCapabilityGroupSimilarity(database=["${TAP_CORE_DATABASE_ID}"], systemList=[${systemUris}]);`;
+
+		runPixel(pixel, insightId)
+			.then((response) => {
+				if (cancelled) return;
+				if (response.errors.length > 0) {
+					setSimilarityLoadError(response.errors.join(", "));
+					setPairSimilarity(new Map());
+					return;
+				}
+
+				const output = response.pixelReturn[0]?.output;
+				setPairSimilarity(parseSimilarityData(output));
+			})
+			.catch((err) => {
+				if (!cancelled) {
+					setSimilarityLoadError(err instanceof Error ? err.message : "Failed to load similarity scores");
+					setPairSimilarity(new Map());
+				}
+			})
+			.finally(() => {
+				if (!cancelled) setIsLoadingSimilarity(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [insightId, requestedSystemUris]);
 
 	const analysis = useMemo(
 		() => (allDetails.length > 0 ? computeOverlap(allDetails) : null),
@@ -215,12 +392,29 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 				<p className="px-4 py-3 text-[11px] leading-relaxed text-gray-400">
 					This list ranks each system in the capability group by <span className="font-semibold text-gray-500">Overlap Score</span>, defined as the percent of Business Processes, Activities, and Data Subject Areas that are also supported by another system in the capability group.
 				</p>
+				{similarityLoadError && (
+					<p className="px-4 pb-2 text-[11px] text-amber-600">
+						Similarity details are unavailable right now. Cards will show "Similarity score not available." ({similarityLoadError})
+					</p>
+				)}
 				<ul className="divide-y divide-gray-100">
 					{analysis.overlapRanking.map((sys, idx) => {
 						const pct = Math.round(sys.score * 100);
 						const open = expandedSystems.has(sys.systemUri);
 						const barColor = pct >= 66 ? "bg-emerald-400" : pct >= 33 ? "bg-amber-400" : "bg-red-400";
 						const pctColor = pct >= 66 ? "text-emerald-600" : pct >= 33 ? "text-amber-600" : "text-red-500";
+						const similarityUri = resolveSimilarityUri(sys.systemUri, sys.systemLabel);
+						const peerSystems = analysis.overlapRanking.filter((peer) => peer.systemUri !== sys.systemUri);
+						const selectedPeerUri = selectedPairBySystem[sys.systemUri] ?? peerSystems[0]?.systemUri;
+						const selectedPeer = peerSystems.find((peer) => peer.systemUri === selectedPeerUri);
+						const selectedPair = selectedPeerUri
+							? pairSimilarity.get(
+									makePairKey(
+										similarityUri,
+										resolveSimilarityUri(selectedPeerUri, selectedPeer?.systemLabel ?? "")
+									)
+							  )
+							: undefined;
 						return (
 							<li key={sys.systemUri}>
 								{/* Row header */}
@@ -243,57 +437,146 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 								{/* Progress bar — always visible */}
 								<div className="mx-4 mb-1 h-1 overflow-hidden rounded-full bg-gray-100">
 									<div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
-								</div>							{/* Examine removal impact button */}
+								</div>
+								{/* Pairwise similarity cards */}
+								<div className="mx-4 mb-2 rounded-md border border-gray-100 bg-gray-50/70 p-2">
+									<div className="mb-1 flex items-center justify-between">
+										<p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+											Similarity to systems in group
+										</p>
+										{isLoadingSimilarity && <span className="text-[10px] text-gray-400">Loading...</span>}
+									</div>
+									{peerSystems.length === 0 ? (
+										<p className="text-[11px] text-gray-400">No other systems in this group.</p>
+									) : (
+										<div className="flex gap-2 overflow-x-auto pb-1">
+											{peerSystems.map((peer) => {
+												const pair = pairSimilarity.get(
+													makePairKey(similarityUri, resolveSimilarityUri(peer.systemUri, peer.systemLabel))
+												);
+												const scoreText =
+													pair?.summaryScore !== null && pair?.summaryScore !== undefined
+														? `${Math.round(pair.summaryScore)}`
+														: "Not available";
+												const isSelected = selectedPeerUri === peer.systemUri;
+												return (
+													<button
+														key={peer.systemUri}
+														type="button"
+														onClick={(e) => {
+															e.stopPropagation();
+															setSelectedPairBySystem((prev) => ({
+																...prev,
+																[sys.systemUri]: peer.systemUri,
+															}));
+														}}
+														className={`min-w-[104px] rounded-md border px-2 py-1.5 text-left transition-colors ${
+															isSelected
+																? "border-blue-300 bg-blue-50"
+																: "border-gray-200 bg-white hover:border-gray-300"
+														}`}
+													>
+														<p className="truncate text-[10px] text-gray-500" title={peer.systemLabel}>
+															{peer.systemLabel}
+														</p>
+														<p className="text-xs font-semibold text-gray-700">{scoreText}</p>
+													</button>
+												);
+											})}
+										</div>
+									)}
+									{selectedPeerUri && (
+										<div className="mt-2 rounded-md border border-gray-200 bg-white px-2.5 py-2">
+											<p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+												Similarity breakdown
+											</p>
+											{selectedPair ? (
+												<>
+													{selectedPair.summaryScore !== null ? (
+														<div className="mb-2 rounded-md bg-blue-50 px-2 py-1.5">
+															<p className="text-[10px] text-gray-600">Summary Score:</p>
+															<p className="text-sm font-bold text-blue-900">{Math.round(selectedPair.summaryScore)}</p>
+														</div>
+													) : (
+														<div className="mb-2 rounded-md bg-amber-50 px-2 py-1.5">
+															<p className="text-[10px] italic text-amber-800">
+																Summary score cannot be computed due to incomplete data.
+															</p>
+														</div>
+													)}
+													<ul className="space-y-1">
+														{selectedPair.categories.map((category) => (
+															<li key={`${sys.systemUri}-${selectedPeerUri}-${category.bucket}`} className="flex items-center justify-between text-[11px]">
+																<span className="text-gray-600">{category.label}</span>
+																<span className="font-medium text-gray-700">
+																	{category.score === null ? "Not available" : `${Math.round(category.score)}`}
+																</span>
+															</li>
+														))}
+													</ul>
+												</>
+											) : (
+												<p className="text-[11px] italic text-gray-500">Similarity data not available.</p>
+											)}
+										</div>
+									)}
+								</div>
+								{/* Examine removal impact button */}
 							<div className="mx-4 mb-2 flex justify-end gap-2">
 								<button
 									type="button"
 									onClick={(e) => {
 										e.stopPropagation();
-										navigate("/system-network", {
+											navigate("/system-network", {
 											state: {
 												systemUri: sys.systemUri,
 												systemLabel: sys.systemLabel,
-												returnGroup: { uri: group.uri, label: group.label },											viewMode,											},
+													returnGroup: { uri: group.uri, label: group.label },
+													viewMode,
+												},
 										});
 									}}
 									className="inline-flex items-center gap-1 rounded-md bg-gray-500 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-gray-700 active:bg-gray-800"
 								>
-									View System Network Graph 
+									View System Network Graph
 								</button>
 								<button
 									type="button"
 									onClick={(e) => {
 										e.stopPropagation();
-										navigate("/removal-impact", {
+											navigate("/removal-impact", {
 											state: {
 												systemUri: sys.systemUri,
 												systemLabel: sys.systemLabel,
-												returnGroup: { uri: group.uri, label: group.label },											viewMode,											},
+													returnGroup: { uri: group.uri, label: group.label },
+													viewMode,
+												},
 										});
 									}}
 									className="inline-flex items-center gap-1 rounded-md bg-blue-400 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:bg-blue-800"
 								>
 									View Removal Impact
 								</button>
-							</div>								{/* Expanded detail */}
+							</div>
+							{/* Expanded detail */}
 								{open && (
 									<div className="space-y-3 border-t border-gray-50 px-4 pb-3 pt-2">
 										{/* Unique items — removal impact */}
-									<div>
+										<div>
 												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
 													Unique Contributions ({sys.uniqueItems.length})
 												</p>
 												{sys.uniqueItems.length === 0 ? (
 													<p className="text-[11px] italic text-gray-400">No unique contributions — all items shared with other systems.</p>
 												) : (
-												<ul className="space-y-1">
-													{sys.uniqueItems.map((item) => (
-														<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-600">
-															<KindBadge kind={item.kind} />
-															<span>{item.label}</span>
-														</li>
-													))}
-												</ul>
+													<ul className="space-y-1">
+														{sys.uniqueItems.map((item) => (
+															<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-600">
+																<KindBadge kind={item.kind} />
+																<span>{item.label}</span>
+															</li>
+														))}
+													</ul>
 												)}
 											</div>
 										{/* Shared items */}

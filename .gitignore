@@ -19,6 +19,12 @@ test-classes/
 .history/
 .vscode/
 
+# BMAD tooling and generated outputs
+_bmad/
+.agents/
+.github/
+_bmad-output/
+
 # cache
 py/__pycache__/
 .classpath

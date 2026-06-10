@@ -2,16 +2,13 @@
 // group bubble is zoomed into on the System Inspection page.
 //
 // Analysis logic lives in @/lib/groupOverlap.
-// Kind badge UI lives in ./KindBadge.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
-import { ChevronDown, ChevronRight } from "lucide-react";
 import type { CapabilityGroup, SystemDetails } from "@/types/system";
 import { computeOverlap } from "@/lib/groupOverlap";
-import { KindBadge } from "./KindBadge";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -148,17 +145,6 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 	const [isLoadingSimilarity, setIsLoadingSimilarity] = useState(false);
 	const [similarityLoadError, setSimilarityLoadError] = useState<string | null>(null);
 	const [selectedPairBySystem, setSelectedPairBySystem] = useState<Record<string, string>>({});
-	// Set of system URIs whose detail rows are expanded (empty = all collapsed)
-	const [expandedSystems, setExpandedSystems] = useState<Set<string>>(new Set());
-
-	const toggleSystem = useCallback((uri: string) => {
-		setExpandedSystems((prev) => {
-			const next = new Set(prev);
-			if (next.has(uri)) next.delete(uri);
-			else next.add(uri);
-			return next;
-		});
-	}, []);
 
 	// ── Drag-to-resize ────────────────────────────────────────────────────────
 	const [width, setWidth] = useState(DEFAULT_WIDTH);
@@ -207,7 +193,6 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 		setPairSimilarity(new Map());
 		setSimilarityLoadError(null);
 		setSelectedPairBySystem({});
-		setExpandedSystems(new Set());
 
 		const fetches = group.systems.map((sys) =>
 			runPixel(`GetSystemDetails(system=["${sys.uri}"]);`, insightId).then(
@@ -305,6 +290,40 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 		[allDetails]
 	);
 
+	const systemSimilarityRanking = useMemo(() => {
+		const totalComparisons = group.systems.length > 1 ? group.systems.length - 1 : 0;
+		return group.systems
+			.map((sys) => {
+				const uri = resolveSimilarityUri(sys.uri, sys.label);
+				const scores: number[] = [];
+				for (const peer of group.systems) {
+					if (peer.uri === sys.uri) continue;
+					const peerUri = resolveSimilarityUri(peer.uri, peer.label);
+					const pair = pairSimilarity.get(makePairKey(uri, peerUri));
+					if (pair?.summaryScore !== null && pair?.summaryScore !== undefined) {
+						scores.push(pair.summaryScore);
+					}
+				}
+				const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+				return {
+					systemUri: sys.uri,
+					systemLabel: sys.label,
+					avgSimilarityScore: avgScore,
+					availableComparisons: scores.length,
+					totalComparisons,
+				};
+			})
+			.sort((a, b) => {
+				if (a.avgSimilarityScore !== null && b.avgSimilarityScore !== null) {
+					if (b.avgSimilarityScore !== a.avgSimilarityScore) return b.avgSimilarityScore - a.avgSimilarityScore;
+				}
+				if (a.avgSimilarityScore !== null && b.avgSimilarityScore === null) return -1;
+				if (a.avgSimilarityScore === null && b.avgSimilarityScore !== null) return 1;
+				if (b.availableComparisons !== a.availableComparisons) return b.availableComparisons - a.availableComparisons;
+				return a.systemLabel.localeCompare(b.systemLabel);
+			});
+	}, [group.systems, pairSimilarity, resolveSimilarityUri]);
+
 	return (
 		<aside
 			className="relative shrink-0 border-l border-gray-200 bg-white flex flex-col overflow-hidden"
@@ -369,17 +388,6 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 						</span>
 					</div>
 
-					{/* Badge key */}
-				<div className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-4 py-2 text-xs text-gray-500">
-					<span className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Key:</span>
-					{(["BP", "Activity", "DataObject"] as const).map((k) => (
-						<span key={k} className="flex items-center gap-1">
-							<KindBadge kind={k} />
-							<span>{k === "BP" ? "Business Process" : k === "Activity" ? "Activity" : "Data Subject Area"}</span>
-						</span>
-					))}
-				</div>
-
 				{/* Group/Capability description */}
 				<div className="border-b border-gray-100 px-4 py-3">
 					<p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">Description:</p>
@@ -388,9 +396,9 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 					</p>
 				</div>
 
-				{/* ── Systems by Overlap Ranking ──────────────────────── */}
+				{/* ── Systems by Similarity Ranking ──────────────────────── */}
 				<p className="px-4 py-3 text-[11px] leading-relaxed text-gray-400">
-					This list ranks each system in the capability group by <span className="font-semibold text-gray-500">Overlap Score</span>, defined as the percent of Business Processes, Activities, and Data Subject Areas that are also supported by another system in the capability group.
+					This list ranks each system in the capability group by <span className="font-semibold text-gray-500">Mean Pairwise Similarity Score</span>, the average of all available backend similarity summary scores against other systems in the group.
 				</p>
 				{similarityLoadError && (
 					<p className="px-4 pb-2 text-[11px] text-amber-600">
@@ -398,13 +406,22 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 					</p>
 				)}
 				<ul className="divide-y divide-gray-100">
-					{analysis.overlapRanking.map((sys, idx) => {
-						const pct = Math.round(sys.score * 100);
-						const open = expandedSystems.has(sys.systemUri);
-						const barColor = pct >= 66 ? "bg-emerald-400" : pct >= 33 ? "bg-amber-400" : "bg-red-400";
-						const pctColor = pct >= 66 ? "text-emerald-600" : pct >= 33 ? "text-amber-600" : "text-red-500";
+					{systemSimilarityRanking.map((sys, idx) => {
+						const scoreDisplay = sys.avgSimilarityScore !== null ? `${Math.round(sys.avgSimilarityScore)}` : "—";
+						const completenessNote = sys.totalComparisons > 0 ? `(${sys.availableComparisons}/${sys.totalComparisons} pairs)` : "";
 						const similarityUri = resolveSimilarityUri(sys.systemUri, sys.systemLabel);
-						const peerSystems = analysis.overlapRanking.filter((peer) => peer.systemUri !== sys.systemUri);
+						const peerEntries = systemSimilarityRanking.filter((peer) => peer.systemUri !== sys.systemUri);
+						// Sort peer cards by pairwise summary score descending, null last, then alphabetical
+						const peerSystems = [...peerEntries].sort((a, b) => {
+							const pairA = pairSimilarity.get(makePairKey(similarityUri, resolveSimilarityUri(a.systemUri, a.systemLabel)));
+							const pairB = pairSimilarity.get(makePairKey(similarityUri, resolveSimilarityUri(b.systemUri, b.systemLabel)));
+							const scoreA = pairA?.summaryScore ?? null;
+							const scoreB = pairB?.summaryScore ?? null;
+							if (scoreA !== null && scoreB !== null) return scoreB - scoreA;
+							if (scoreA !== null && scoreB === null) return -1;
+							if (scoreA === null && scoreB !== null) return 1;
+							return a.systemLabel.localeCompare(b.systemLabel);
+						});
 						const selectedPeerUri = selectedPairBySystem[sys.systemUri] ?? peerSystems[0]?.systemUri;
 						const selectedPeer = peerSystems.find((peer) => peer.systemUri === selectedPeerUri);
 						const selectedPair = selectedPeerUri
@@ -418,25 +435,15 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 						return (
 							<li key={sys.systemUri}>
 								{/* Row header */}
-								<button
-									type="button"
-									onClick={() => toggleSystem(sys.systemUri)}
-									className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-gray-50 transition-colors"
-								>
-									{open ? (
-										<ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
-									) : (
-										<ChevronRight className="h-3 w-3 shrink-0 text-gray-400" />
-									)}
+								<div className="flex w-full items-center gap-2 px-4 py-2.5">
 									<span className="w-4 shrink-0 text-right text-[10px] text-gray-400">{idx + 1}</span>
 									<span className="flex-1 truncate text-xs font-medium text-gray-800" title={sys.systemLabel}>
 										{sys.systemLabel}
 									</span>
-									<span className={`shrink-0 text-xs font-semibold ${pctColor}`}>{pct}%</span>
-								</button>
-								{/* Progress bar — always visible */}
-								<div className="mx-4 mb-1 h-1 overflow-hidden rounded-full bg-gray-100">
-									<div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+									<span className="shrink-0 text-xs font-semibold text-gray-700">{scoreDisplay}</span>
+									{completenessNote && (
+										<span className="shrink-0 text-[10px] text-gray-400">{completenessNote}</span>
+									)}
 								</div>
 								{/* Pairwise similarity cards */}
 								<div className="mx-4 mb-2 rounded-md border border-gray-100 bg-gray-50/70 p-2">
@@ -521,7 +528,7 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 										</div>
 									)}
 								</div>
-								{/* Examine removal impact button */}
+								{/* Action buttons */}
 							<div className="mx-4 mb-2 flex justify-end gap-2">
 								<button
 									type="button"
@@ -558,45 +565,6 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 									View Removal Impact
 								</button>
 							</div>
-							{/* Expanded detail */}
-								{open && (
-									<div className="space-y-3 border-t border-gray-50 px-4 pb-3 pt-2">
-										{/* Unique items — removal impact */}
-										<div>
-												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
-													Unique Contributions ({sys.uniqueItems.length})
-												</p>
-												{sys.uniqueItems.length === 0 ? (
-													<p className="text-[11px] italic text-gray-400">No unique contributions — all items shared with other systems.</p>
-												) : (
-													<ul className="space-y-1">
-														{sys.uniqueItems.map((item) => (
-															<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-600">
-																<KindBadge kind={item.kind} />
-																<span>{item.label}</span>
-															</li>
-														))}
-													</ul>
-												)}
-											</div>
-										{/* Shared items */}
-										{sys.sharedItems.length > 0 && (
-											<div>
-												<p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-													Shared with others ({sys.sharedItems.length})
-												</p>
-												<ul className="space-y-1">
-													{sys.sharedItems.map((item) => (
-														<li key={item.uri} className="flex items-start gap-1.5 text-xs text-gray-500">
-															<KindBadge kind={item.kind} />
-															<span>{item.label}</span>
-														</li>
-													))}
-												</ul>
-											</div>
-										)}
-									</div>
-								)}
 							</li>
 						);
 					})}

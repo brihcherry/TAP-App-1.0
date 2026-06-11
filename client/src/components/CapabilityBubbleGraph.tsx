@@ -45,6 +45,8 @@ interface CapabilityBubbleGraphProps {
 	onGroupFocus?: (group: { uri: string; label: string } | null) => void;
 	/** URI of the group that should remain zoomed after a D3 rebuild (e.g. sidebar resize). */
 	focusedGroupUri?: string | null;
+	/** URI of a system to highlight with a pulsing glow (e.g. from search). */
+	highlightedSystemUri?: string | null;
 }
 
 export const CapabilityBubbleGraph = ({
@@ -53,11 +55,14 @@ export const CapabilityBubbleGraph = ({
 	selectedSystemUri,
 	onGroupFocus,
 	focusedGroupUri,
+	highlightedSystemUri,
 }: CapabilityBubbleGraphProps) => {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const svgRef = useRef<SVGSVGElement>(null);
 	const selectedUriRef = useRef(selectedSystemUri);
 	selectedUriRef.current = selectedSystemUri;
+	const highlightedUriRef = useRef(highlightedSystemUri);
+	highlightedUriRef.current = highlightedSystemUri;
 	const onGroupFocusRef = useRef(onGroupFocus);
 	onGroupFocusRef.current = onGroupFocus;
 
@@ -130,6 +135,10 @@ export const CapabilityBubbleGraph = ({
 			@keyframes bubbleFloat {
 				0%, 100% { transform: translateY(0); }
 				50% { transform: translateY(-3.5px); }
+			}
+			@keyframes bubbleHighlight {
+				0%, 100% { stroke-opacity: 1; }
+				50% { stroke-opacity: 0.3; }
 			}
 		`);
 
@@ -237,10 +246,19 @@ export const CapabilityBubbleGraph = ({
 		circle.filter((d) => d.depth === 2).each(function (_, i) {
 			const dur = (3 + (i % 7) * 0.5).toFixed(1);
 			const delay = ((i * 0.37) % 3).toFixed(2);
-			d3.select(this)
+			const el = d3.select(this);
+			el
 				.style("transform-box", "fill-box")
-				.style("transform-origin", "center")
-				.style("animation", `bubbleFloat ${dur}s ease-in-out ${delay}s infinite`);
+				.style("transform-origin", "center");
+			const d = el.datum();
+			if (d.data.uri === highlightedUriRef.current) {
+				// Apply search highlight glow — overrides float animation
+				el.attr("stroke", "#2563eb")
+					.attr("stroke-width", 4)
+					.style("animation", "bubbleHighlight 1.2s ease-in-out infinite");
+			} else {
+				el.style("animation", `bubbleFloat ${dur}s ease-in-out ${delay}s infinite`);
+			}
 		});
 
 		// ── Group labels — rendered ABOVE the circle boundary ───────────────
@@ -367,7 +385,7 @@ export const CapabilityBubbleGraph = ({
 		}
 
 		return () => { svg.interrupt(); };
-	}, [capabilityGroups, buildHierarchy, onSystemClick, focusedGroupUri, dims]);
+	}, [capabilityGroups, buildHierarchy, onSystemClick, focusedGroupUri, dims, highlightedSystemUri]);
 
 	// ── Selection highlighting (separate — avoids full D3 rebuild) ────────────
 	useEffect(() => {
@@ -385,6 +403,29 @@ export const CapabilityBubbleGraph = ({
 			})
 			.attr("stroke-width", (d) => d.data.uri === selectedSystemUri ? 3 : 1.5);
 	}, [selectedSystemUri]);
+
+	// ── Search highlight (pulsing glow) ──────────────────────────────────────
+	useEffect(() => {
+		const svgEl = svgRef.current;
+		if (!svgEl) return;
+
+		d3.select(svgEl)
+			.selectAll<SVGCircleElement, d3.HierarchyCircularNode<HierarchyDatum>>("circle")
+			.filter((d) => d.depth === 2)
+			.each(function (d) {
+				const el = d3.select(this);
+				if (d.data.uri === highlightedSystemUri) {
+					el.attr("stroke", "#2563eb")
+						.attr("stroke-width", 4)
+						.style("animation", "bubbleHighlight 1.2s ease-in-out infinite");
+				} else {
+					const sel = d.data.uri === selectedSystemUri;
+					el.attr("stroke", "rgba(255,255,255,0.8)")
+						.attr("stroke-width", sel ? 3 : 1.5)
+						.style("animation", null);
+				}
+			});
+	}, [highlightedSystemUri, selectedSystemUri]);
 
 	return (
 		<div ref={containerRef} className="w-full h-full relative">

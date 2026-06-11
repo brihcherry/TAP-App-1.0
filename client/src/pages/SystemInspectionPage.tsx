@@ -4,7 +4,7 @@
 //
 // Data comes from GetCapabilityGroups (grouping) and GetSystemDetails (details).
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
@@ -52,6 +52,12 @@ export const SystemInspectionPage = () => {
   const [details, setDetails] = useState<SystemDetails | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+
+  // ── System search state ───────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+  const [highlightedSystemUri, setHighlightedSystemUri] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   // ── Fetch capability groups on mount and when viewMode changes ─────────────
   useEffect(() => {
@@ -132,15 +138,56 @@ export const SystemInspectionPage = () => {
     return () => { cancelled = true; };
   }, [insightId, selectedSystem]);
 
+  // ── Search results (client-side filter) ────────────────────────────────────
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const results: { systemUri: string; systemLabel: string; groupUri: string; groupLabel: string }[] = [];
+    for (const cg of capabilityGroups) {
+      for (const sys of cg.systems) {
+        if (sys.label.toLowerCase().includes(q)) {
+          results.push({ systemUri: sys.uri, systemLabel: sys.label, groupUri: cg.uri, groupLabel: cg.label });
+        }
+      }
+    }
+    return results;
+  }, [searchQuery, capabilityGroups]);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const handleSearchSelect = useCallback(
+    (result: { systemUri: string; systemLabel: string; groupUri: string; groupLabel: string }) => {
+      // Find the full group object to set as selectedGroup
+      const group = capabilityGroups.find((cg) => cg.uri === result.groupUri) ?? null;
+      setSelectedGroup(group);
+      setHighlightedSystemUri(result.systemUri);
+      setSearchQuery("");
+      setIsSearchOpen(false);
+      // Do NOT set selectedSystem — inspection panel must stay closed
+    },
+    [capabilityGroups]
+  );
+
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleSystemClick = useCallback((systemUri: string, systemLabel: string) => {
     setSelectedSystem({ uri: systemUri, label: systemLabel });
+    setHighlightedSystemUri(null);
   }, []);
 
   const handleGroupFocus = useCallback((focused: { uri: string; label: string } | null) => {
     if (!focused) {
       setSelectedGroup(null);
+      setHighlightedSystemUri(null); // Clear highlight when zooming out of group
       return;
     }
     const group = capabilityGroups.find((cg) => cg.uri === focused.uri) ?? null;
@@ -149,6 +196,7 @@ export const SystemInspectionPage = () => {
 
   const handleCloseGroupSidebar = useCallback(() => {
     setSelectedGroup(null);
+    setHighlightedSystemUri(null); // Clear highlight when sidebar is closed
   }, []);
 
   const handleClosePanel = useCallback(() => {
@@ -189,6 +237,39 @@ export const SystemInspectionPage = () => {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* System search */}
+            <div ref={searchRef} className="relative">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsSearchOpen(true);
+                }}
+                onFocus={() => setIsSearchOpen(true)}
+                placeholder="Search systems…"
+                className="w-56 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              {isSearchOpen && searchQuery.trim() && (
+                <div className="absolute top-full left-0 z-20 mt-1 max-h-64 w-80 overflow-y-auto rounded-md border border-gray-200 bg-white shadow-lg">
+                  {searchResults.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-gray-500">No systems found</p>
+                  ) : (
+                    searchResults.map((result) => (
+                      <button
+                        key={`${result.groupUri}::${result.systemUri}`}
+                        type="button"
+                        onClick={() => handleSearchSelect(result)}
+                        className="flex w-full flex-col px-3 py-2 text-left hover:bg-blue-50 transition-colors"
+                      >
+                        <span className="text-sm font-medium text-gray-800">{result.systemLabel}</span>
+                        <span className="text-xs text-gray-500">{result.groupLabel}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             {/* View mode toggle */}
             <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
               {(["capabilityGroup", "capability"] as ViewMode[]).map((m) => (
@@ -257,6 +338,7 @@ export const SystemInspectionPage = () => {
               selectedSystemUri={selectedSystem?.uri}
               onGroupFocus={handleGroupFocus}
               focusedGroupUri={selectedGroup?.uri ?? null}
+              highlightedSystemUri={highlightedSystemUri}
             />
           </div>
         )}

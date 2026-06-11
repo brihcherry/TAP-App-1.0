@@ -2,6 +2,7 @@ package reactors.networkOfSystems;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -106,38 +107,85 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
 
   /**
    * Fetches SystemInterfaces the system is connected to, along with direction.
-   * Only retrieves interfaces that are marked as supported via Phase property.
+   * Filters match GetDataFlowImpactReactor: interface must not be retired,
+   * must carry a DataObject payload, connected system must be an ActiveSystem,
+   * and self-connections are excluded.
    * Runs two queries to distinguish outgoing (provider) from incoming (consumer).
    */
   private List<Map<String, Object>> fetchInterfaces(QueryExecutor executor, String sysUri) {
+    // Outbound: this system → Provide → interface → Consume → target ActiveSystem
     String outQuery =
-        "SELECT DISTINCT ?Interface WHERE {"
-        + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
-        + "{<" + sysUri + "> <" + BASE + "/Relation/Provide> ?Interface}"
-        + "{?Interface <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Supported>}"
+        "SELECT DISTINCT ?Interface ?connectedSystem ?dataObject WHERE {"
+        + " ?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
+        + " <" + sysUri + "> <" + BASE + "/Relation/Provide> ?Interface ."
+        + " FILTER NOT EXISTS { ?Interface <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Retired_(Not_Supported)> }"
+        + " ?Interface <" + BASE + "/Relation/Consume> ?connectedSystem ."
+        + " ?connectedSystem <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
+        + " FILTER(?connectedSystem != <" + sysUri + ">)"
+        + " ?Interface <" + BASE + "/Relation/Payload> ?dataObject ."
+        + " ?dataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject> ."
         + "}";
 
+    // Inbound: source ActiveSystem → Provide → interface → Consume → this system
     String inQuery =
-        "SELECT DISTINCT ?Interface WHERE {"
-        + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
-        + "{?Interface <" + BASE + "/Relation/Consume> <" + sysUri + ">}"
-        + "{?Interface <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Supported>}"
+        "SELECT DISTINCT ?Interface ?connectedSystem ?dataObject WHERE {"
+        + " ?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
+        + " ?connectedSystem <" + BASE + "/Relation/Provide> ?Interface ."
+        + " ?Interface <" + BASE + "/Relation/Consume> <" + sysUri + "> ."
+        + " FILTER NOT EXISTS { ?Interface <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Retired_(Not_Supported)> }"
+        + " ?connectedSystem <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
+        + " FILTER(?connectedSystem != <" + sysUri + ">)"
+        + " ?Interface <" + BASE + "/Relation/Payload> ?dataObject ."
+        + " ?dataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject> ."
         + "}";
 
     List<Map<String, Object>> interfaces = new ArrayList<>();
-    for (Map<String, String> row : executor.executeSelect(outQuery)) {
-      String uri = row.get("Interface");
-      if (uri != null) {
-        interfaces.add(makeEnrichedInterfaceEntry(executor, uri, "provider", sysUri));
-      }
-    }
-    for (Map<String, String> row : executor.executeSelect(inQuery)) {
-      String uri = row.get("Interface");
-      if (uri != null) {
-        interfaces.add(makeEnrichedInterfaceEntry(executor, uri, "consumer", sysUri));
-      }
-    }
+    interfaces.addAll(groupInterfaceRows(executor.executeSelect(outQuery), "provider"));
+    interfaces.addAll(groupInterfaceRows(executor.executeSelect(inQuery), "consumer"));
     return interfaces;
+  }
+
+  /**
+   * Groups flat interface query rows (Interface, connectedSystem, dataObject) into
+   * enriched interface entries keyed by Interface URI + connected system URI,
+   * deduplicating data objects within each entry.
+   * An interface that fans out to multiple connected systems produces separate entries.
+   */
+  private List<Map<String, Object>> groupInterfaceRows(
+      List<Map<String, String>> rows, String role) {
+    // Key: "interfaceUri::connectedSystemUri" → enriched entry
+    Map<String, Map<String, Object>> grouped = new LinkedHashMap<>();
+    for (Map<String, String> row : rows) {
+      String ifcUri = row.get("Interface");
+      String connSysUri = row.get("connectedSystem");
+      String doUri = row.get("dataObject");
+      if (ifcUri == null || connSysUri == null || doUri == null) continue;
+
+      String groupKey = ifcUri + "::" + connSysUri;
+      Map<String, Object> entry = grouped.computeIfAbsent(groupKey, k -> {
+        Map<String, Object> e = new LinkedHashMap<>();
+        e.put("uri", ifcUri);
+        e.put("label", extractLabel(ifcUri));
+        e.put("role", role);
+        e.put("connectedSystem", extractLabel(connSysUri));
+        e.put("connectedSystemUri", connSysUri);
+        e.put("dataObjects", new ArrayList<Map<String, String>>());
+        return e;
+      });
+
+      @SuppressWarnings("unchecked")
+      List<Map<String, String>> dataObjects = (List<Map<String, String>>) entry.get("dataObjects");
+      boolean alreadyPresent = dataObjects.stream().anyMatch(d -> doUri.equals(d.get("uri")));
+      if (!alreadyPresent) {
+        Map<String, String> doEntry = new HashMap<>();
+        doEntry.put("uri", doUri);
+        doEntry.put("label", extractLabel(doUri));
+        dataObjects.add(doEntry);
+      }
+    }
+    List<Map<String, Object>> result = new ArrayList<>(grouped.values());
+    result.sort((a, b) -> ((String) a.get("connectedSystem")).compareTo((String) b.get("connectedSystem")));
+    return result;
   }
 
   /**
@@ -207,74 +255,6 @@ public class GetSystemDetailsReactor extends AbstractProjectReactor {
       }
     }
     return result;
-  }
-
-  private static Map<String, String> makeInterfaceEntry(String uri, String role) {
-    Map<String, String> entry = new HashMap<>();
-    entry.put("uri", uri);
-    entry.put("label", extractLabel(uri));
-    entry.put("role", role);
-    return entry;
-  }
-
-  /**
-   * Creates an enriched interface entry that includes the connected system and data objects.
-   */
-  private Map<String, Object> makeEnrichedInterfaceEntry(
-      QueryExecutor executor, String ifcUri, String role, String currentSystemUri) {
-    Map<String, Object> entry = new HashMap<>();
-    entry.put("uri", ifcUri);
-    entry.put("label", extractLabel(ifcUri));
-    entry.put("role", role);
-
-    // Find the connected system (the "other end" of this interface)
-    String connectedSystem = "";
-    String connectedSystemUri = "";
-    if ("provider".equals(role)) {
-      // This system provides to interface → find who consumes from it
-      String q = "SELECT DISTINCT ?Sys WHERE {"
-          + "{<" + ifcUri + "> <" + BASE + "/Relation/Consume> ?Sys}"
-          + "{?Sys <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
-          + "}";
-      List<Map<String, String>> rows = executor.executeSelect(q);
-      if (!rows.isEmpty()) {
-        connectedSystemUri = rows.get(0).get("Sys");
-        if (connectedSystemUri != null) connectedSystem = extractLabel(connectedSystemUri);
-      }
-    } else {
-      // This system consumes from interface → find who provides to it
-      String q = "SELECT DISTINCT ?Sys WHERE {"
-          + "{?Sys <" + BASE + "/Relation/Provide> <" + ifcUri + ">}"
-          + "{?Sys <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
-          + "}";
-      List<Map<String, String>> rows = executor.executeSelect(q);
-      if (!rows.isEmpty()) {
-        connectedSystemUri = rows.get(0).get("Sys");
-        if (connectedSystemUri != null) connectedSystem = extractLabel(connectedSystemUri);
-      }
-    }
-    entry.put("connectedSystem", connectedSystem != null ? connectedSystem : "");
-    entry.put("connectedSystemUri", connectedSystemUri != null ? connectedSystemUri : "");
-
-    // Fetch data objects carried by this interface
-    String doQuery = "SELECT DISTINCT ?DataObject WHERE {"
-        + "{<" + ifcUri + "> <" + BASE + "/Relation/Payload> ?DataObject}"
-        + "{?DataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject>}"
-        + "}";
-    List<Map<String, String>> doRows = executor.executeSelect(doQuery);
-    List<Map<String, String>> dataObjects = new ArrayList<>();
-    for (Map<String, String> doRow : doRows) {
-      String doUri = doRow.get("DataObject");
-      if (doUri != null) {
-        Map<String, String> doEntry = new HashMap<>();
-        doEntry.put("uri", doUri);
-        doEntry.put("label", extractLabel(doUri));
-        dataObjects.add(doEntry);
-      }
-    }
-    entry.put("dataObjects", dataObjects);
-
-    return entry;
   }
 
   /**

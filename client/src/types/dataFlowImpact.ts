@@ -28,6 +28,19 @@ export interface OutboundConnection {
   dataObjects: OutboundDataObject[];
 }
 
+// ── Inbound Connection ────────────────────────────────────────────────────────
+
+export interface InboundDataObject {
+  uri: string;
+  label: string;
+}
+
+export interface InboundConnection {
+  sourceSystemUri: string;
+  sourceSystemLabel: string;
+  dataObjects: InboundDataObject[];
+}
+
 // ── Reactor response ──────────────────────────────────────────────────────────
 
 /** Response from GetDataFlowImpact reactor. */
@@ -38,4 +51,5 @@ export interface SystemImpactReactorResponse {
   dataSubjectAreas: DataSubjectArea[];
   crmDataObjects: CrmDataObject[];
   outboundConnections: OutboundConnection[];
+  inboundConnections?: InboundConnection[];
 }

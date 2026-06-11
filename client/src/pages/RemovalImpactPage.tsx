@@ -2,17 +2,17 @@
 //
 // Two-panel layout:
 //   Left:  System directory list (alphabetical, click to select)
-//   Right: 3-section analysis: ADS status, creator/modifier data objects, outbound connections
+//   Right: 4-section analysis: ADS status, creator/modifier data objects, outbound connections, inbound connections
 //
 // Data sources:
 //   - GetActiveSystems (once on mount) — list of active systems
-//   - GetDataFlowImpact (per selection) — ADS status, CRM data objects, outbound connections
+//   - GetDataFlowImpact (per selection) — ADS status, CRM data objects, outbound connections, inbound connections
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
-import { ArrowLeft, CheckCircle, XCircle, Database, Share2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, Database, Share2, ArrowDownLeft } from "lucide-react";
 import type { SystemImpactReactorResponse } from "@/types/dataFlowImpact";
 
 const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
@@ -308,6 +308,44 @@ export const RemovalImpactPage = () => {
                 )}
               </div>
 
+              {/* ── Section 4: Inbound Data Connections ─────────────────── */}
+              <div className="rounded-lg border border-gray-200 bg-white p-5">
+                <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <ArrowDownLeft className="h-4 w-4 text-gray-500" />
+                  Inbound Data Connections
+                </h2>
+                {(systemImpact.inboundConnections ?? []).length === 0 ? (
+                  <p className="text-sm text-gray-400 italic">
+                    No inbound interfaces found for this system.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {(systemImpact.inboundConnections ?? []).map((conn) => (
+                      <div
+                        key={conn.sourceSystemUri}
+                        className="rounded border border-gray-200 bg-gray-50 p-3"
+                      >
+                        <span className="text-sm font-semibold text-gray-800 block mb-2">
+                          ← {conn.sourceSystemLabel}
+                        </span>
+                        {conn.dataObjects.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {conn.dataObjects.map((obj) => (
+                              <span
+                                key={obj.uri}
+                                className="inline-block rounded-full bg-white border border-gray-300 px-2.5 py-0.5 text-xs text-gray-700"
+                              >
+                                {obj.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
         </div>
@@ -322,7 +360,7 @@ export const RemovalImpactPage = () => {
       <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
         <h1 className="text-lg font-semibold text-gray-900">Data Flow Impact Analyzer</h1>
         <p className="mt-0.5 text-sm text-gray-500">
-          Select a system to view its authoritative data status, data objects created or modified, and outbound connections.
+          Select a system to view its authoritative data status, data objects created or modified, outbound connections, and inbound connections.
         </p>
       </header>
 

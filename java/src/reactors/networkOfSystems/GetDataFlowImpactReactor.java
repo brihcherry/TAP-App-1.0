@@ -19,7 +19,8 @@ import util.QueryExecutor;
 
 /**
  * Returns a system's authoritative data source status, data objects it creates or modifies,
- * and its first-order outbound interface connections (supported interfaces only).
+ * its first-order outbound interface connections, and its first-order inbound interface
+ * connections (supported interfaces only).
  *
  * <p>Pixel call:
  * <pre>
@@ -84,6 +85,10 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     List<Map<String, Object>> outboundConnections = fetchOutboundConnections(executor, systemUri);
     LOGGER.info("GetDataFlowImpact: outboundConnections={}", outboundConnections.size());
 
+    // Q4: First-order inbound connections (ActiveSystem → Provide → Interface → Consume → System)
+    List<Map<String, Object>> inboundConnections = fetchInboundConnections(executor, systemUri);
+    LOGGER.info("GetDataFlowImpact: inboundConnections={}", inboundConnections.size());
+
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("systemUri", systemUri);
     result.put("systemName", extractLabel(systemUri));
@@ -91,6 +96,7 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     result.put("dataSubjectAreas", dataSubjectAreas);
     result.put("crmDataObjects", crmDataObjects);
     result.put("outboundConnections", outboundConnections);
+    result.put("inboundConnections", inboundConnections);
 
     return new NounMetadata(result, PixelDataType.MAP);
   }
@@ -200,6 +206,61 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
     return result;
   }
 
+  // ── Q4: Inbound Interface Connections ───────────────────────────────────────
+  // ?sourceSystem → Provide → ?icd → Consume → <selectedSystem> (ActiveSystem)
+  // Conditions:
+  //   - Interface must NOT have Phase = Retired_(Not_Supported)
+  //   - Interface must carry a DataObject payload
+  //   - Source system must be an ActiveSystem and not the selected system itself
+
+  private List<Map<String, Object>> fetchInboundConnections(QueryExecutor executor, String systemUri) {
+    String query =
+        "SELECT DISTINCT ?icd ?sourceSystem ?dataObject WHERE {"
+        + " ?icd <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface> ."
+        + " ?sourceSystem <" + BASE + "/Relation/Provide> ?icd ."
+        + " ?icd <" + BASE + "/Relation/Consume> <" + systemUri + "> ."
+        + " FILTER NOT EXISTS { ?icd <" + BASE + "/Relation/Phase> <http://health.mil/ontologies/Concept/LifeCycle/Retired_(Not_Supported)> }"
+        + " ?sourceSystem <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem> ."
+        + " FILTER(?sourceSystem != <" + systemUri + ">)"
+        + " ?icd <" + BASE + "/Relation/Payload> ?dataObject ."
+        + " ?dataObject <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject> ."
+        + "}";
+
+    List<Map<String, String>> rows = executor.executeSelect(query);
+
+    // Group by sourceSystem → list of dataObjects (merged across interfaces)
+    Map<String, Map<String, Object>> groupedMap = new LinkedHashMap<>();
+    for (Map<String, String> row : rows) {
+      String sourceUri = row.get("sourceSystem");
+      String dataObjUri = row.get("dataObject");
+      if (sourceUri == null || dataObjUri == null) continue;
+
+      Map<String, Object> group = groupedMap.computeIfAbsent(sourceUri, k -> {
+        Map<String, Object> g = new LinkedHashMap<>();
+        g.put("sourceSystemUri", sourceUri);
+        g.put("sourceSystemLabel", extractLabel(sourceUri));
+        g.put("dataObjects", new ArrayList<Map<String, String>>());
+        return g;
+      });
+
+      @SuppressWarnings("unchecked")
+      List<Map<String, String>> dataObjects = (List<Map<String, String>>) group.get("dataObjects");
+      // Deduplicate data objects within same source system
+      boolean alreadyPresent = dataObjects.stream().anyMatch(d -> dataObjUri.equals(d.get("uri")));
+      if (!alreadyPresent) {
+        Map<String, String> doEntry = new HashMap<>();
+        doEntry.put("uri", dataObjUri);
+        doEntry.put("label", extractLabel(dataObjUri));
+        dataObjects.add(doEntry);
+      }
+    }
+
+    // Sort by source system label
+    List<Map<String, Object>> result = new ArrayList<>(groupedMap.values());
+    result.sort((a, b) -> ((String) a.get("sourceSystemLabel")).compareTo((String) b.get("sourceSystemLabel")));
+    return result;
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   private static String extractLabel(String uri) {
@@ -218,7 +279,7 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
 
   @Override
   public String getReactorDescription() {
-    return "Returns ADS status, creator/modifier data objects, and first-order outbound interface connections for a system.";
+    return "Returns ADS status, creator/modifier data objects, first-order outbound interface connections, and first-order inbound interface connections for a system.";
   }
 
   @Override

@@ -358,7 +358,7 @@ export const RemovalImpactPage = () => {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Header */}
       <header className="shrink-0 border-b border-gray-200 bg-white px-6 py-4">
-        <h1 className="text-lg font-semibold text-gray-900">Data Flow Impact Analyzer</h1>
+        <h1 className="text-lg font-semibold text-gray-900">Removal Impact: What are the impacts on data flow by removing this system?</h1>
         <p className="mt-0.5 text-sm text-gray-500">
           Select a system to view its authoritative data status, data objects created or modified, outbound connections, and inbound connections.
         </p>

@@ -51,7 +51,6 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
   private static final String BUCKET_BP = "Business_Processes_Supported";
   private static final String BUCKET_ACT = "Activities_Supported";
   private static final String BUCKET_DATA_OBJ = "Data_Subject_Area";
-  private static final String BUCKET_ENV = "Environment";
   private static final String BUCKET_USERS = "User_Types";
   private static final String BUCKET_INTERFACE = "Interfaces";
   private static final Pattern ABSOLUTE_URI_PATTERN = Pattern.compile("^[a-zA-Z][a-zA-Z0-9+.-]*://.+$");
@@ -105,14 +104,6 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
           + "}",
         bindingsClause);
 
-    String environmentQuery = appendBindings(
-        "SELECT DISTINCT ?System ?Theater WHERE {"
-          + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
-          + "{?System <" + BASE + "/Relation/Contains/GarrisonTheater> ?Theater}"
-          + "{?System ?UsedBy ?SystemUser}"
-          + "}",
-        bindingsClause);
-
     String userTypeQuery = appendBindings(
         "SELECT DISTINCT ?System ?Personnel WHERE {"
           + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
@@ -148,12 +139,6 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
         engineId,
         dataObjectQuery,
         SimilarityFunctions.VALUE);
-    Map<String, Map<String, Double>> environmentRaw = similarityFunctions.stringCompareBinaryResultGetter(
-        engineId,
-        environmentQuery,
-        "Theater",
-        "Garrison",
-        "Both");
     Map<String, Map<String, Double>> userTypeRaw = similarityFunctions.compareObjectParameterScore(
         engineId,
         userTypeQuery,
@@ -178,12 +163,6 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
         identityLabelMap));
     bucketChartData.put(BUCKET_DATA_OBJ, SimilarityChartingUtils.processHashForCharting(
         dataObjectRaw,
-        keyHash,
-        "System1",
-        "System2",
-        identityLabelMap));
-    bucketChartData.put(BUCKET_ENV, SimilarityChartingUtils.processHashForCharting(
-        environmentRaw,
         keyHash,
         "System1",
         "System2",

@@ -9,7 +9,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { runPixel } from "@semoss/sdk";
 import { useInsight } from "@semoss/sdk/react";
-import { ArrowLeft, Search, X } from "lucide-react";
+import { ArrowLeft, ChevronDown, Search, X } from "lucide-react";
 import { NetworkGraph } from "@/components/NetworkGraph";
 import { GraphTooltip } from "@/components/GraphTooltip";
 import { GraphLegend } from "@/components/GraphLegend";

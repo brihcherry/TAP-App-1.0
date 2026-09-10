@@ -421,7 +421,6 @@ After the reactor responds, `computeDataFlowImpact()` in `src/lib/dataFlowImpact
 **Pixel call syntax:**
 ```
 GetDataFlowImpact(
-  database=["<DatabaseEngineID>"],
   system=["http://health.mil/ontologies/Concept/System/<SystemName>"]
 );
 ```

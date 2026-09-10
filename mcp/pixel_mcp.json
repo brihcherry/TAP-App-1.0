@@ -23,11 +23,6 @@
                 "type": "object",
                 "title": "GetDataFlowImpact_Arguments",
                 "properties": {
-                    "database": {
-                        "description": "The UUID of the RDF database engine to query.",
-                        "title": "database",
-                        "type": "string"
-                    },
                     "system": {
                         "description": "The full URI of the system to analyze.",
                         "title": "system",
@@ -35,14 +30,13 @@
                     }
                 },
                 "required": [
-                    "database",
                     "system"
                 ]
             },
             "name": "GetDataFlowImpact",
             "description": "Returns ADS status, creator/modifier data objects, and first-order outbound interface connections for a system.",
             "_meta": {
-                "SMSS_MCP_UI": {"displayLocation": "sidebar"},
+                "SMSS_MCP_UI": {"resourceURI": "/#/removal-impact/"},
                 "SMSS_MCP_GENERATOR": "MakePixelMCP",
                 "SMSS_FUNCTION_NAME": "GetDataFlowImpact",
                 "SMSS_MCP_EXECUTION": "auto"
@@ -59,7 +53,7 @@
             "name": "GetSystemNetwork",
             "description": "Returns the data-flow-only system network (Systems, Interfaces, DataObjects) filtered to interfaces with Payload data. Used by the System Network Map.",
             "_meta": {
-                "SMSS_MCP_UI": {"displayLocation": "sidebar"},
+                "SMSS_MCP_UI": {"resourceURI": "/#/system-network/"},
                 "SMSS_MCP_GENERATOR": "MakePixelMCP",
                 "SMSS_FUNCTION_NAME": "GetSystemNetwork",
                 "SMSS_MCP_EXECUTION": "auto"
@@ -80,32 +74,11 @@
             "name": "GetSystemDetails",
             "description": "Retrieves all attribute details for a single system: data objects, interfaces, environment, transactional status, business processes, activities, and user types.",
             "_meta": {
-                "SMSS_MCP_UI": {"displayLocation": "sidebar"},
                 "SMSS_MCP_GENERATOR": "MakePixelMCP",
                 "SMSS_FUNCTION_NAME": "GetSystemDetails",
                 "SMSS_MCP_EXECUTION": "auto"
             },
             "title": "Get System Details"
-        },
-        {
-            "inputSchema": {
-                "type": "object",
-                "title": "Weather_Arguments",
-                "properties": {"city": {
-                    "description": "The city to get the weather forecast for.",
-                    "title": "city",
-                    "type": "string"
-                }},
-                "required": ["city"]
-            },
-            "name": "GetWeather",
-            "description": "Get the weather forecast for a city.",
-            "_meta": {
-                "SMSS_MCP_UI": {"resourceURI": "/#/"},
-                "SMSS_FUNCTION_NAME": "GetWeather",
-                "SMSS_MCP_EXECUTION": "ask"
-            },
-            "title": "GetWeather"
         }
     ]
 }

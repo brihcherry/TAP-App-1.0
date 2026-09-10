@@ -15,8 +15,6 @@ import { useInsight } from "@semoss/sdk/react";
 import { ArrowLeft, CheckCircle, XCircle, Database, Share2 } from "lucide-react";
 import type { SystemImpactReactorResponse } from "@/types/dataFlowImpact";
 
-const DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SystemEntry {
@@ -118,7 +116,7 @@ export const RemovalImpactPage = () => {
     setAnalysisError(null);
     setSystemImpact(null);
 
-    const pixel = `GetDataFlowImpact(database=["${DATABASE_ID}"], system=["${selectedSystem.uri}"]);`;
+    const pixel = `GetDataFlowImpact(system=["${selectedSystem.uri}"]);`;
 
     runPixel(pixel, insightId)
       .then((response) => {

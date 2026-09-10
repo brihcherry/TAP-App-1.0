@@ -12,9 +12,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import prerna.sablecc2.om.PixelDataType;
-import prerna.sablecc2.om.ReactorKeysEnum;
 import prerna.sablecc2.om.nounmeta.NounMetadata;
 import reactors.AbstractProjectReactor;
+import util.ProjectProperties;
 import util.QueryExecutor;
 
 /**
@@ -24,7 +24,6 @@ import util.QueryExecutor;
  * <p>Pixel call:
  * <pre>
  *   GetDataFlowImpact(
- *     database=["133db94b-4371-4763-bff9-edf7e5ed021b"],
  *     system=["http://health.mil/ontologies/Concept/System/AHLTA"]
  *   );
  * </pre>
@@ -34,7 +33,6 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
   private static final Logger LOGGER =
       LogManager.getLogger(GetDataFlowImpactReactor.class);
 
-  private static final String DATABASE_KEY = ReactorKeysEnum.DATABASE.getKey();
   private static final String SYSTEM_KEY = "system";
 
   private static final String RDF_TYPE =
@@ -47,14 +45,14 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
       "http://health.mil/ontologies/Concept/LifeCycle/Supported";
 
   public GetDataFlowImpactReactor() {
-    this.keysToGet = new String[] { DATABASE_KEY, SYSTEM_KEY };
-    this.keyRequired = new int[] { 1, 1 };
+    this.keysToGet = new String[] { SYSTEM_KEY };
+    this.keyRequired = new int[] { 1 };
   }
 
   @Override
   protected NounMetadata doExecute() {
     organizeKeys();
-    String engineId = this.keyValue.get(DATABASE_KEY);
+    String engineId = ProjectProperties.getInstance().getDatabaseId();
     String systemUri = this.keyValue.get(SYSTEM_KEY);
     LOGGER.info("GetDataFlowImpact: engine={} system={}", engineId, systemUri);
 
@@ -223,9 +221,6 @@ public class GetDataFlowImpactReactor extends AbstractProjectReactor {
 
   @Override
   public String getDescriptionForKey(String key) {
-    if (DATABASE_KEY.equals(key)) {
-      return "The UUID of the RDF database engine to query.";
-    }
     if (SYSTEM_KEY.equals(key)) {
       return "The full URI of the system to analyze.";
     }

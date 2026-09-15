@@ -15,7 +15,6 @@ import { computeOverlap } from "@/lib/groupOverlap";
 const MIN_WIDTH = 360;
 const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 360;
-const TAP_CORE_DATABASE_ID = "133db94b-4371-4763-bff9-edf7e5ed021b";
 
 type SimilarityBucketKey =
 	| "Business_Processes_Supported"
@@ -256,7 +255,8 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 		setSimilarityLoadError(null);
 
 		const systemUris = requestedSystemUris.map((uri) => `"${uri}"`).join(",");
-		const pixel = `GetCapabilityGroupSimilarity(database=["${TAP_CORE_DATABASE_ID}"], systemList=[${systemUris}]);`;
+		// engine falls back to ProjectProperties.getDatabaseId() when database is blank
+		const pixel = `GetCapabilityGroupSimilarity(database=[], systemList=[${systemUris}]);`;
 
 		runPixel(pixel, insightId)
 			.then((response) => {

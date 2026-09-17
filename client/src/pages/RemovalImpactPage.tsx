@@ -5,7 +5,7 @@
 //   Right: 4-section analysis: ADS status, creator/modifier data objects, outbound connections, inbound connections
 //
 // Data sources:
-//   - GetActiveSystems (once on mount) — list of active systems
+//   - GetSystems (once on mount) — list of systems
 //   - GetDataFlowImpact (per selection) — ADS status, CRM data objects, outbound connections, inbound connections
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
@@ -18,11 +18,6 @@ import type { SystemImpactReactorResponse } from "@/types/dataFlowImpact";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SystemEntry {
-  uri: string;
-  label: string;
-}
-
-interface ActiveSystemEntry {
   uri: string;
   label: string;
 }
@@ -54,7 +49,7 @@ export const RemovalImpactPage = () => {
   // ── List view state ───────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
 
-  // ── Fetch active systems on mount ─────────────────────────────────────────
+  // ── Fetch systems on mount ─────────────────────────────────────────
   useEffect(() => {
     if (!insightId) return;
     let cancelled = false;
@@ -62,7 +57,7 @@ export const RemovalImpactPage = () => {
     setIsLoadingNetwork(true);
     setNetworkError(null);
 
-    runPixel(`GetActiveSystems();`, insightId)
+    runPixel(`GetSystems();`, insightId)
       .then((activeRes) => {
         if (cancelled) return;
 
@@ -70,9 +65,9 @@ export const RemovalImpactPage = () => {
           setNetworkError(activeRes.errors.join(", "));
           return;
         }
-        const activeOutput = activeRes.pixelReturn[0]?.output as { systems?: ActiveSystemEntry[] };
+        const activeOutput = activeRes.pixelReturn[0]?.output as { systems?: SystemEntry[] };
         if (!activeOutput?.systems) {
-          setNetworkError("Unexpected response format from GetActiveSystems.");
+          setNetworkError("Unexpected response format from GetSystems.");
           return;
         }
 

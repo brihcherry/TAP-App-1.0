@@ -96,7 +96,7 @@ public class GetCapabilityGroupsReactor extends AbstractProjectReactor {
     String query =
         "SELECT DISTINCT ?" + groupVar + " ?System WHERE {"
         + "{?" + groupVar + " <" + RDF_TYPE + "> <" + conceptType + ">}"
-        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
+        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?System <" + BASE + "/Relation/Supports> ?" + groupVar + "}"
         + "} ORDER BY ?" + groupVar + " ?System";
 

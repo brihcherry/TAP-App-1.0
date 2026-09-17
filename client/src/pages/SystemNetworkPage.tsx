@@ -32,18 +32,18 @@ interface NetworkEntry {
   connectionCount: number;
 }
 
-interface ActiveSystemEntry {
+interface SystemEntry {
   uri: string;
   label: string;
 }
 
 function buildEntries(
-  activeSystems: ActiveSystemEntry[],
+  systems: SystemEntry[],
   raw: RawNetworkData | null,
 ): NetworkEntry[] {
   const counts = raw ? computeDirectNeighborCounts(raw) : new Map<string, number>();
 
-  return activeSystems
+  return systems
     .map((s) => ({
       uri: s.uri,
       label: s.label,
@@ -100,20 +100,20 @@ export const SystemNetworkPage = () => {
     setError(null);
 
     Promise.all([
-      runPixel(`GetActiveSystems();`, insightId),
+      runPixel(`GetSystems();`, insightId),
       runPixel(`GetSystemNetwork();`, insightId),
     ])
       .then(([activeRes, networkRes]) => {
         if (cancelled) return;
 
-        // Parse active systems list
+        // Parse systems list
         if (activeRes.errors.length > 0) {
           setError(activeRes.errors.join(", "));
           return;
         }
-        const activeOutput = activeRes.pixelReturn[0]?.output as { systems?: ActiveSystemEntry[] };
+        const activeOutput = activeRes.pixelReturn[0]?.output as { systems?: SystemEntry[] };
         if (!activeOutput?.systems) {
-          setError("Unexpected response format from GetActiveSystems.");
+          setError("Unexpected response format from GetSystems.");
           return;
         }
 

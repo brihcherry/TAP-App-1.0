@@ -15,16 +15,16 @@ import util.ProjectProperties;
 import util.QueryExecutor;
 
 /**
- * Returns all active systems from the TAP_Core_Data RDF database.
+ * Returns all systems from the TAP_Core_Data RDF database.
  *
  * <p>Unlike GetSystemNetwork, this reactor does NOT filter by interface
- * connectivity or payload. It returns every system typed as ActiveSystem,
+ * connectivity or payload. It returns every system typed as System,
  * making it suitable for populating directory lists where all systems
  * should be visible regardless of their data-flow connections.
  *
  * <p>Pixel call:
  * <pre>
- *   GetActiveSystems();
+ *   GetSystems();
  * </pre>
  *
  * <p>Output:
@@ -38,16 +38,16 @@ import util.QueryExecutor;
  *   }
  * </pre>
  */
-public class GetActiveSystemsReactor extends AbstractProjectReactor {
+public class GetSystemsReactor extends AbstractProjectReactor {
 
-  private static final Logger LOGGER = LogManager.getLogger(GetActiveSystemsReactor.class);
+  private static final Logger LOGGER = LogManager.getLogger(GetSystemsReactor.class);
 
   private static final String RDF_TYPE =
       "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
   private static final String BASE =
       "http://semoss.org/ontologies";
 
-  public GetActiveSystemsReactor() {
+  public GetSystemsReactor() {
     this.keysToGet = new String[] {};
     this.keyRequired = new int[] {};
   }
@@ -56,13 +56,13 @@ public class GetActiveSystemsReactor extends AbstractProjectReactor {
   protected NounMetadata doExecute() {
     organizeKeys();
     String engineId = ProjectProperties.getInstance().getDatabaseId();
-    LOGGER.info("GetActiveSystems: engine=" + engineId);
+    LOGGER.info("GetSystems: engine=" + engineId);
 
     QueryExecutor executor = new QueryExecutor(engineId);
 
     String query =
         "SELECT DISTINCT ?System WHERE {"
-        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
+        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "} ORDER BY ?System";
 
     List<Map<String, String>> rows = executor.executeSelect(query);
@@ -81,7 +81,7 @@ public class GetActiveSystemsReactor extends AbstractProjectReactor {
     Map<String, Object> result = new HashMap<>();
     result.put("systems", systems);
 
-    LOGGER.info("GetActiveSystems: found " + systems.size() + " active systems");
+    LOGGER.info("GetSystems: found " + systems.size() + " systems");
     return new NounMetadata(result, PixelDataType.MAP);
   }
 
@@ -93,7 +93,7 @@ public class GetActiveSystemsReactor extends AbstractProjectReactor {
 
   @Override
   public String getReactorDescription() {
-    return "Returns all active systems from the RDF database. Used to populate system "
+    return "Returns all systems from the RDF database. Used to populate system "
         + "directory lists on the System Network Map and Data Object Impact pages.";
   }
 

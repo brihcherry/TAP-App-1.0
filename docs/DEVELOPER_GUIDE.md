@@ -236,8 +236,7 @@ These contradict either intuition, older docs in the workspace, or naïve assump
 3. **No CI/CD exists.** Build and publish are manual. There is no `.github/workflows/`, no `Jenkinsfile`, no `.gitlab-ci.yml`.
 4. **[../py/mcp_driver.py](../py/mcp_driver.py) is template-only.** The Fahrenheit/Celsius converters are placeholders. Python is available scaffolding, not a production surface today.
 5. **The `database=[...]` Pixel parameter is mostly ignored.** Engine resolution happens through `ProjectProperties.getInstance().getDatabaseId()` reading [../java/project.properties](../java/project.properties). Frontend code still passes it for convention. The **one exception** is `GetCapabilityGroupSimilarity`, which honors a non-empty value and only falls back to `ProjectProperties` when the parameter is missing or blank. Do not imply the engine is selectable per call elsewhere.
-6. **Three SPARQL filters are baked in and inviolable.** Every new reactor must honor them — copy them from existing reactors:
-   - `?System rdf:type ActiveSystem` — inactive systems are invisible to the app.
+6. **Two SPARQL filters are baked in and inviolable.** Every new reactor must honor them — copy them from existing reactors:
    - `?SystemInterface Phase LifeCycle/Supported` — retired interfaces never form edges.
    - `?provide Contains/CRM ?crm . FILTER(?crm = 'C' || ?crm = 'M')` — only Creator (`C`) and Modifier (`M`) provide-edges count for provider analysis; Reference (`R`) is ignored.
 7. **No global state library.** React `useState` + `useMemo` only. Cross-page coordination uses `react-router-dom`'s `location.state` exclusively. Do not introduce Redux, Zustand, Jotai, MobX, or a Context-based store as a casual addition.
@@ -365,7 +364,7 @@ Which components each page composes, and which reactors back them:
 |---|---|---|
 | [SystemInspectionPage.tsx](../client/src/pages/SystemInspectionPage.tsx) (rendered at `/` via [HomePage.tsx](../client/src/pages/HomePage.tsx)) | [CapabilityBubbleGraph](../client/src/components/CapabilityBubbleGraph.tsx), [CapabilityGroupSidebar](../client/src/components/CapabilityGroupSidebar.tsx), [SystemInspectionPanel](../client/src/components/SystemInspectionPanel.tsx) | `GetCapabilityGroups` (once on mount), `GetSystemDetails` (on system click + ×N for overlap), `GetSystemsByConcept` (on concept click), `GetCapabilityGroupSimilarity` (on group zoom-in) |
 | [SystemNetworkPage.tsx](../client/src/pages/SystemNetworkPage.tsx) at `/system-network` | [NetworkGraph](../client/src/components/NetworkGraph.tsx), [SystemGraphSidebar](../client/src/components/SystemGraphSidebar.tsx), [EdgeDetailSidebar](../client/src/components/EdgeDetailSidebar.tsx) | `GetSystemNetwork` (once on mount) |
-| [RemovalImpactPage.tsx](../client/src/pages/RemovalImpactPage.tsx) at `/removal-impact` | inline directory + impact-report panels | `GetActiveSystems` (once on mount), `GetDataFlowImpact` (per selection) |
+| [RemovalImpactPage.tsx](../client/src/pages/RemovalImpactPage.tsx) at `/removal-impact` | inline directory + impact-report panels | `GetSystems` (once on mount), `GetDataFlowImpact` (per selection) |
 
 ---
 
@@ -373,7 +372,7 @@ Which components each page composes, and which reactors back them:
 
 ### The subclass contract
 
-Every reactor extends `AbstractProjectReactor` and follows the pattern below. Mirror [GetActiveSystemsReactor.java](../java/src/reactors/networkOfSystems/GetActiveSystemsReactor.java) (no params), [GetSystemDetailsReactor.java](../java/src/reactors/networkOfSystems/GetSystemDetailsReactor.java) (required param), or [GetCapabilityGroupsReactor.java](../java/src/reactors/networkOfSystems/GetCapabilityGroupsReactor.java) (optional param + branching).
+Every reactor extends `AbstractProjectReactor` and follows the pattern below. Mirror [GetSystemsReactor.java](../java/src/reactors/networkOfSystems/GetSystemsReactor.java) (no params), [GetSystemDetailsReactor.java](../java/src/reactors/networkOfSystems/GetSystemDetailsReactor.java) (required param), or [GetCapabilityGroupsReactor.java](../java/src/reactors/networkOfSystems/GetCapabilityGroupsReactor.java) (optional param + branching).
 
 ```java
 package reactors.networkOfSystems;
@@ -412,7 +411,7 @@ public class GetMyThingReactor extends AbstractProjectReactor {
     String sparql = ""
       + "SELECT DISTINCT ?Thing WHERE { "
       + "  ?System <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-      + "          <http://semoss.org/ontologies/Concept/ActiveSystem> . "
+      + "          <http://semoss.org/ontologies/Concept/System> . "
       + "  FILTER(STR(?System) = \"" + systemUri + "\") . "
       + "  /* ... */ "
       + "} ";
@@ -434,7 +433,7 @@ public class GetMyThingReactor extends AbstractProjectReactor {
 
   @Override
   public String getDescriptionForKey(String key) {
-    if (SYSTEM_KEY.equals(key)) return "URI of the focal ActiveSystem.";
+    if (SYSTEM_KEY.equals(key)) return "URI of the focal System.";
     return null;
   }
 }
@@ -455,9 +454,8 @@ Notes on the boilerplate:
 
 Every new reactor that touches systems, interfaces, or provider analysis **must** honor:
 
-1. `?System rdf:type <http://semoss.org/ontologies/Concept/ActiveSystem>` — never query un-`ActiveSystem` systems.
-2. `?SystemInterface <…/Relation/Phase> <…/Concept/LifeCycle/Supported>` on any interface-traversing query.
-3. `?provide <…/Relation/Contains/CRM> ?crm . FILTER(?crm = "C" || ?crm = "M")` on any provider-determination query.
+1. `?SystemInterface <…/Relation/Phase> <…/Concept/LifeCycle/Supported>` on any interface-traversing query.
+2. `?provide <…/Relation/Contains/CRM> ?crm . FILTER(?crm = "C" || ?crm = "M")` on any provider-determination query.
 
 Copy these clauses from a neighboring reactor rather than re-deriving them.
 
@@ -765,16 +763,16 @@ Prime candidates for promotion to `HelperMethods`:
 
 The seven production reactors. All live under `reactors.networkOfSystems`, are invoked through `actions.run("ReactorName(...)")` (the `Reactor` suffix is dropped in the Pixel string), and route their SPARQL through `util.QueryExecutor`.
 
-### `GetActiveSystems`
+### `GetSystems`
 
-**Source:** [GetActiveSystemsReactor.java](../java/src/reactors/networkOfSystems/GetActiveSystemsReactor.java)
+**Source:** [GetSystemsReactor.java](../java/src/reactors/networkOfSystems/GetSystemsReactor.java)
 
-**Purpose:** Returns every system typed as `ActiveSystem`, unfiltered by interface connectivity or payload. Used to populate directory lists that should show all active systems regardless of data-flow participation (e.g. the Removal Impact page's left rail).
+**Purpose:** Returns every system typed as `System`, unfiltered by interface connectivity or payload. Used to populate directory lists that should show all systems regardless of data-flow participation (e.g. the Removal Impact page's left rail).
 
 **Pixel call:**
 
 ```
-GetActiveSystems();
+GetSystems();
 ```
 
 **Parameters:** none.
@@ -784,7 +782,7 @@ GetActiveSystems();
 ```sparql
 SELECT DISTINCT ?System WHERE {
   ?System <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
-          <http://semoss.org/ontologies/Concept/ActiveSystem>
+          <http://semoss.org/ontologies/Concept/System>
 } ORDER BY ?System
 ```
 
@@ -833,7 +831,7 @@ SELECT DISTINCT ?CapabilityGroup ?System WHERE {
   ?CapabilityGroup <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
                    <http://semoss.org/ontologies/Concept/CapabilityGroup> .
   ?System          <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
-                   <http://semoss.org/ontologies/Concept/ActiveSystem> .
+                   <http://semoss.org/ontologies/Concept/System> .
   ?System          <http://semoss.org/ontologies/Relation/Supports> ?CapabilityGroup .
 } ORDER BY ?CapabilityGroup ?System
 ```
@@ -993,7 +991,7 @@ GetSystemNetwork(database=["133db94b-4371-4763-bff9-edf7e5ed021b"]);
 ```sparql
 SELECT DISTINCT ?System ?Interface WHERE {
   ?System    <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
-             <http://semoss.org/ontologies/Concept/ActiveSystem> .
+             <http://semoss.org/ontologies/Concept/System> .
   ?Interface <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
              <http://semoss.org/ontologies/Concept/SystemInterface> .
   ?System    <http://semoss.org/ontologies/Relation/Provide>  ?Interface .
@@ -1009,7 +1007,7 @@ SELECT DISTINCT ?Interface ?System WHERE {
   ?Interface <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
              <http://semoss.org/ontologies/Concept/SystemInterface> .
   ?System    <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
-             <http://semoss.org/ontologies/Concept/ActiveSystem> .
+             <http://semoss.org/ontologies/Concept/System> .
   ?Interface <http://semoss.org/ontologies/Relation/Consume>  ?System .
   ?Interface <http://semoss.org/ontologies/Relation/Payload>  ?anyData .
   ?System    <http://semoss.org/ontologies/Relation/Supports> ?anyCapGroup .
@@ -1167,7 +1165,7 @@ SELECT DISTINCT ?icd ?targetSystem ?dataObject WHERE {
   }
   ?icd          <http://semoss.org/ontologies/Relation/Consume> ?targetSystem .
   ?targetSystem <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
-                <http://semoss.org/ontologies/Concept/ActiveSystem> .
+                <http://semoss.org/ontologies/Concept/System> .
   FILTER(?targetSystem != <systemUri>)
   ?icd        <http://semoss.org/ontologies/Relation/Payload> ?dataObject .
   ?dataObject <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
@@ -1175,7 +1173,7 @@ SELECT DISTINCT ?icd ?targetSystem ?dataObject WHERE {
 }
 ```
 
-**Q4 — inbound connections.** Reverses the Q3 pattern — sources reached by `ActiveSystem → Provide → SystemInterface → Consume → <selectedSystem>` — and groups by source system:
+**Q4 — inbound connections.** Reverses the Q3 pattern — sources reached by `System → Provide → SystemInterface → Consume → <selectedSystem>` — and groups by source system:
 
 ```sparql
 SELECT DISTINCT ?icd ?sourceSystem ?dataObject WHERE {
@@ -1188,7 +1186,7 @@ SELECT DISTINCT ?icd ?sourceSystem ?dataObject WHERE {
          <http://health.mil/ontologies/Concept/LifeCycle/Retired_(Not_Supported)>
   }
   ?sourceSystem <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
-                <http://semoss.org/ontologies/Concept/ActiveSystem> .
+                <http://semoss.org/ontologies/Concept/System> .
   FILTER(?sourceSystem != <systemUri>)
   ?icd        <http://semoss.org/ontologies/Relation/Payload> ?dataObject .
   ?dataObject <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
@@ -1240,7 +1238,7 @@ Both Q3 and Q4 results are grouped by peer system, merging data objects from mul
 | `isAuthoritativeDataSource` | `true` if the system is recognized as an ADS for at least one Data Subject Area. |
 | `dataSubjectAreas[]` | Distinct DSAs for which the system is the ADS. Empty when `isAuthoritativeDataSource` is `false`. |
 | `crmDataObjects[].crm` | `"C"` = Creator, `"M"` = Modifier (Reference `R` is filtered out). |
-| `outboundConnections[]` | First-order targets reached via `System → Provide → SystemInterface → Consume → ActiveSystem` over supported interfaces only. Grouped by target system. |
+| `outboundConnections[]` | First-order targets reached via `System → Provide → SystemInterface → Consume → System` over supported interfaces only. Grouped by target system. |
 | `inboundConnections[]` | First-order sources reached by reversing the same pattern. Grouped by source system. |
 
 Frontend transform: none. [RemovalImpactPage.tsx](../client/src/pages/RemovalImpactPage.tsx) consumes the `SystemImpactReactorResponse` directly.
@@ -1333,7 +1331,7 @@ Each bucket's raw pair scores are folded into the response by `SimilarityChartin
 ### Conventions across all reactors
 
 - **Engine resolution** — every reactor except `GetCapabilityGroupSimilarity` resolves the engine from `ProjectProperties.getInstance().getDatabaseId()` regardless of the `database=[...]` parameter.
-- **The three baked-in filters** apply globally: `?System rdf:type ActiveSystem`, `?SystemInterface Phase LifeCycle/Supported`, and the `CRM = 'C' || 'M'` filter on provider analysis.
+- **The two baked-in filters** apply globally: `?SystemInterface Phase LifeCycle/Supported`, and the `CRM = 'C' || 'M'` filter on provider analysis.
 - **URI label extraction** — labels are derived from the trailing segment of the URI (after the last `/`), with underscores replaced by spaces. See `extractLabel(...)` in each reactor.
 - **Logging** — every reactor logs `LOGGER.info("ReactorName: engine=" + engineId + ...)` on entry. Errors propagate through `AbstractProjectReactor.execute()`'s try/catch.
 
@@ -1356,8 +1354,7 @@ The app reads from a single RDF triplestore (engine id `133db94b-4371-4763-bff9-
 
 | Class URI suffix | Meaning | Used by |
 |---|---|---|
-| `Concept/System` | Any system (active or not) | `GetSystemsByConcept` |
-| `Concept/ActiveSystem` | Currently operational systems. **All app-facing queries filter to this class.** | All reactors |
+| `Concept/System` | Any system, active or not. **All app-facing queries use this class — the app no longer distinguishes active from inactive systems.** | All reactors |
 | `Concept/SystemInterface` | A directional data exchange channel (ICD) between systems | `GetSystemNetwork`, `GetDataFlowImpact`, `GetSystemDetails`, `GetCapabilityGroupSimilarity` |
 | `Concept/DataObject` | A unit of data carried over an interface | `GetSystemDetails`, `GetSystemNetwork`, `GetDataFlowImpact`, `GetCapabilityGroupSimilarity` |
 | `Concept/CapabilityGroup` | A top-level grouping of capabilities | `GetCapabilityGroups` (default mode) |
@@ -1395,7 +1392,7 @@ The app reads from a single RDF triplestore (engine id `133db94b-4371-4763-bff9-
 The fundamental data-flow shape that the app traces:
 
 ```
-ActiveSystem  --[Provide]-->  SystemInterface  --[Consume]-->  ActiveSystem
+System  --[Provide]-->  SystemInterface  --[Consume]-->  System
                                     │
                                [Payload]
                                     ▼
@@ -1409,21 +1406,18 @@ A data flow exists from System A to System B for DataObject D when:
 - I has a `Payload` edge to D, **and**
 - I has `Phase → LifeCycle/Supported`.
 
-Both A and B must be `ActiveSystem`.
-
 ### Filters that apply globally
 
 These filters are baked into the reactor SPARQL and shape every analysis the app produces. Bypassing any of them changes correctness silently.
 
-1. **`?System rdf:type ActiveSystem`** — inactive systems are invisible.
-2. **`?SystemInterface Phase LifeCycle/Supported`** — retired interfaces never form edges in flow analyses (`GetSystemNetwork`, `GetDataFlowImpact`, `GetSystemDetails`).
-3. **`?provide Contains/CRM ?crm . FILTER(?crm = 'C' || ?crm = 'M')`** — only Creator/Modifier provide-edges count for provider analysis; Reference (`R`) is ignored.
+1. **`?SystemInterface Phase LifeCycle/Supported`** — retired interfaces never form edges in flow analyses (`GetSystemNetwork`, `GetDataFlowImpact`, `GetSystemDetails`).
+2. **`?provide Contains/CRM ?crm . FILTER(?crm = 'C' || ?crm = 'M')`** — only Creator/Modifier provide-edges count for provider analysis; Reference (`R`) is ignored.
 
 ### Capability group structure
 
 ```
-CapabilityGroup ─[Supports]──> ActiveSystem
-Capability      ─[Supports]──> ActiveSystem
+CapabilityGroup ─[Supports]──> System
+Capability      ─[Supports]──> System
 ```
 
 `GetCapabilityGroups()` default mode returns CapabilityGroup → systems (flattening capabilities). Mode `"capability"` returns Capability → systems directly.
@@ -1466,7 +1460,7 @@ The authoritative OWL file is [../../external_reference_docs/db_specific/TAP_Cor
 | Accessing `tool.inputs` in React MCP UIs | Use `tool.parameters` |
 | Including the `Reactor` suffix in Pixel calls | Drop the suffix: `GetSystemDetails(...)`, not `GetSystemDetailsReactor(...)` |
 | Subclass `doExecute()` that omits `organizeKeys()` | Call `organizeKeys()` defensively at the top — mirror existing reactors (see Inviolable Rule #10) |
-| Bypassing `ActiveSystem` / `Supported` / `CRM` filters in new SPARQL | All three are correctness-critical — copy them from a neighboring reactor |
+| Bypassing `Supported` / `CRM` filters in new SPARQL | Both are correctness-critical — copy them from a neighboring reactor |
 | Wrapping `sendMCPResponseToPlayground()` with custom matching logic | Call it directly — the SDK handles tool-name matching |
 | Introducing a global store (Redux, Zustand, Context) for cross-page coordination | Use `react-router-dom` `location.state`; any cross-cutting store is a PRD-level change |
 | Putting business logic in [../client/src/components/ui/](../client/src/components/ui/) | That folder is reserved for shadcn primitives — put feature components in [../client/src/components/](../client/src/components/) |

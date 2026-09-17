@@ -85,7 +85,7 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
     // This filters out interface-only connections with no recorded data flow.
     String provideQuery =
         "SELECT DISTINCT ?System ?Interface WHERE {"
-        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
+        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
         + "{?System <" + BASE + "/Relation/Provide> ?Interface}"
         + "{?Interface <" + BASE + "/Relation/Payload> ?anyData}"
@@ -109,7 +109,7 @@ public class GetSystemNetworkReactor extends AbstractProjectReactor {
     String consumeQuery =
         "SELECT DISTINCT ?Interface ?System WHERE {"
         + "{?Interface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
-        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/ActiveSystem>}"
+        + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
         + "{?Interface <" + BASE + "/Relation/Consume> ?System}"
         + "{?Interface <" + BASE + "/Relation/Payload> ?anyData}"
         + "} ORDER BY ?Interface";

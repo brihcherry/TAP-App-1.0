@@ -4,19 +4,19 @@
         {
             "inputSchema": {
                 "type": "object",
-                "title": "GetActiveSystems_Arguments",
+                "title": "GetSystems_Arguments",
                 "properties": {},
                 "required": []
             },
-            "name": "GetActiveSystems",
-            "description": "Returns all active systems from the RDF database. Used to populate system directory lists on the System Network Map and Data Object Impact pages.",
+            "name": "GetSystems",
+            "description": "Returns all systems from the RDF database. Used to populate system directory lists on the System Network Map and Data Object Impact pages.",
             "_meta": {
                 "SMSS_MCP_UI": {"displayLocation": "sidebar"},
                 "SMSS_MCP_GENERATOR": "MakePixelMCP",
-                "SMSS_FUNCTION_NAME": "GetActiveSystems",
+                "SMSS_FUNCTION_NAME": "GetSystems",
                 "SMSS_MCP_EXECUTION": "auto"
             },
-            "title": "Get Active Systems"
+            "title": "Get Systems"
         },
         {
             "inputSchema": {

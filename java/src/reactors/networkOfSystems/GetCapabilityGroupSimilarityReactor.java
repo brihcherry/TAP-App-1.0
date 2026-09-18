@@ -74,27 +74,27 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
 
     SimilarityFunctions similarityFunctions = new SimilarityFunctions();
     similarityFunctions.setComparisonObjectList(systemUris);
-    String bindingsClause = buildBindingsClause(systemUris);
+    String valuesClause = buildValuesClause(systemUris);
 
-    String businessProcessQuery = appendBindings(
+    String businessProcessQuery = appendValues(
         "SELECT DISTINCT ?System ?BusinessProcess WHERE {"
           + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
           + "{?BusinessProcess <" + RDF_TYPE + "> <" + BASE + "/Concept/BusinessProcess>}"
           + "{?System <" + BASE + "/Relation/Supports> ?BusinessProcess}"
           + "{?System ?UsedBy ?SystemUser}"
           + "}",
-        bindingsClause);
+        valuesClause);
 
-    String activityQuery = appendBindings(
+    String activityQuery = appendValues(
         "SELECT DISTINCT ?System ?Activity WHERE {"
           + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
           + "{?Activity <" + RDF_TYPE + "> <" + BASE + "/Concept/Activity>}"
           + "{?System <" + BASE + "/Relation/Supports> ?Activity}"
           + "{?System ?UsedBy ?SystemUser}"
           + "}",
-        bindingsClause);
+        valuesClause);
 
-    String dataObjectQuery = appendBindings(
+    String dataObjectQuery = appendValues(
         "SELECT DISTINCT ?System ?Data WHERE {"
           + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
           + "{?Data <" + RDF_TYPE + "> <" + BASE + "/Concept/DataObject>}"
@@ -102,18 +102,18 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
           + "{?System ?Provide ?Data}"
           + "{?System ?UsedBy ?SystemUser}"
           + "}",
-        bindingsClause);
+        valuesClause);
 
-    String userTypeQuery = appendBindings(
+    String userTypeQuery = appendValues(
         "SELECT DISTINCT ?System ?Personnel WHERE {"
           + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
           + "{?Personnel <" + RDF_TYPE + "> <" + BASE + "/Concept/Personnel>}"
           + "{?System <" + BASE + "/Relation/UsedBy> ?Personnel}"
           + "{?System ?UsedBy ?SystemUser}"
           + "}",
-        bindingsClause);
+        valuesClause);
 
-    String interfaceQuery = appendBindings(
+    String interfaceQuery = appendValues(
         "SELECT DISTINCT ?System ?SystemInterface WHERE {"
           + "{?System <" + RDF_TYPE + "> <" + BASE + "/Concept/System>}"
           + "{?SystemInterface <" + RDF_TYPE + "> <" + BASE + "/Concept/SystemInterface>}"
@@ -122,7 +122,7 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
           + "{?SystemInterface <" + BASE + "/Relation/Consume> ?System}}"
           + "{?System ?UsedBy ?SystemUser}"
           + "}",
-        bindingsClause);
+        valuesClause);
 
     Map<String, String> identityLabelMap = buildIdentityLabelMap(systemUris);
     Map<String, Map<String, Object>> keyHash = new HashMap<>();
@@ -238,20 +238,24 @@ public class GetCapabilityGroupSimilarityReactor extends AbstractProjectReactor 
     return new NounMetadata(result, PixelDataType.MAP);
   }
 
-  private String buildBindingsClause(List<String> systemUris) {
-    StringBuilder sb = new StringBuilder("BINDINGS ?System {");
+  private String buildValuesClause(List<String> systemUris) {
+    StringBuilder sb = new StringBuilder("VALUES ?System {");
     for (String uri : systemUris) {
-      sb.append("(<").append(uri).append(">)");
+      sb.append("<").append(uri).append("> ");
     }
     sb.append("}");
     return sb.toString();
   }
 
-  private String appendBindings(String query, String bindingsClause) {
-    if (bindingsClause == null || bindingsClause.isEmpty()) {
+  private String appendValues(String query, String valuesClause) {
+    if (valuesClause == null || valuesClause.isEmpty()) {
       return query;
     }
-    return query + " " + bindingsClause;
+    int whereEnd = query.lastIndexOf('}');
+    if (whereEnd < 0) {
+      throw new IllegalArgumentException("SPARQL query is missing a WHERE closing brace");
+    }
+    return query.substring(0, whereEnd) + valuesClause + query.substring(whereEnd);
   }
 
   private Map<String, Double> collapseChartScores(

@@ -255,8 +255,7 @@ export const CapabilityGroupSidebar = ({ group, onClose, viewMode }: CapabilityG
 		setSimilarityLoadError(null);
 
 		const systemUris = requestedSystemUris.map((uri) => `"${uri}"`).join(",");
-		// engine falls back to ProjectProperties.getDatabaseId() when database is blank
-		const pixel = `GetCapabilityGroupSimilarity(database=[], systemList=[${systemUris}]);`;
+		const pixel = `GetCapabilityGroupSimilarity(systemList=[${systemUris}]);`;
 
 		runPixel(pixel, insightId)
 			.then((response) => {

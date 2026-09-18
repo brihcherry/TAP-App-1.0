@@ -463,7 +463,7 @@ Copy these clauses from a neighboring reactor rather than re-deriving them.
 
 For batched SPARQL + complex result shaping, mirror [GetDataFlowImpactReactor.java](../java/src/reactors/networkOfSystems/GetDataFlowImpactReactor.java) — it runs four phased queries (ADS status → CRM data objects → outbound → inbound) and assembles the response on the Java side.
 
-For pair-similarity scoring with BINDINGS-scoped queries, mirror [GetCapabilityGroupSimilarityReactor.java](../java/src/reactors/networkOfSystems/GetCapabilityGroupSimilarityReactor.java) plus the helpers in [SimilarityFunctions.java](../java/src/util/SimilarityFunctions.java) and [SimilarityChartingUtils.java](../java/src/util/SimilarityChartingUtils.java).
+For pair-similarity scoring with `VALUES`-scoped queries, mirror [GetCapabilityGroupSimilarityReactor.java](../java/src/reactors/networkOfSystems/GetCapabilityGroupSimilarityReactor.java) plus the helpers in [SimilarityFunctions.java](../java/src/util/SimilarityFunctions.java) and [SimilarityChartingUtils.java](../java/src/util/SimilarityChartingUtils.java).
 
 ### Querying multiple engines
 
@@ -1268,7 +1268,7 @@ GetCapabilityGroupSimilarity(
 | `systemList` | yes | string[] (URIs) | Must contain **at least 2** system URIs. Duplicates and blanks are stripped. Returns a constant-string error message if fewer than 2 valid URIs remain. |
 | `database` | no | string | If empty/missing, the reactor falls back to `ProjectProperties.getInstance().getDatabaseId()`. **This is the one reactor in the codebase that honors `database=[...]` from the frontend.** |
 
-**Execution flow.** The reactor builds a `BINDINGS ?System { … }` clause from `systemList` and appends it to six independent bucket queries (cost is proportional to the size of the supplied set, not the full system count). The shape of each bucket query is identical — only the joined predicate and the projected variable differ:
+**Execution flow.** The reactor builds a `VALUES ?System { … }` clause from `systemList` and inserts it inside six independent bucket queries (cost is proportional to the size of the supplied set, not the full system count). The shape of each bucket query is identical — only the joined predicate and the projected variable differ:
 
 ```sparql
 SELECT DISTINCT ?System ?<BucketTarget> WHERE {
@@ -1276,8 +1276,8 @@ SELECT DISTINCT ?System ?<BucketTarget> WHERE {
   { ?<BucketTarget> <rdf:type> <http://semoss.org/ontologies/Concept/<BucketTargetClass>> }
   { ?System         <…/Relation/<JoinPredicate>> ?<BucketTarget> }
   { ?System         ?UsedBy ?SystemUser }
+  VALUES ?System { <uriA> <uriB> … }
 }
-BINDINGS ?System { (<uriA>) (<uriB>) … }
 ```
 
 The six buckets:
